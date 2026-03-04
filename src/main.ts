@@ -1,6 +1,7 @@
 import { Plugin, WorkspaceLeaf } from "obsidian";
 import { ChatView, VIEW_TYPE_MEMEX_CHAT } from "./ChatView";
 import { VaultSearch } from "./VaultSearch";
+import { EmbedSearch } from "./EmbedSearch";
 import { ClaudeClient } from "./ClaudeClient";
 import { MemexChatSettingsTab, MemexChatSettings, DEFAULT_SETTINGS } from "./SettingsTab";
 
@@ -12,8 +13,14 @@ interface PluginData {
 export default class MemexChatPlugin extends Plugin {
   settings!: MemexChatSettings;
   search!: VaultSearch;
+  embedSearch: EmbedSearch | null = null;
   claude!: ClaudeClient;
   data!: PluginData;
+
+  /** Returns the active search engine: EmbedSearch when enabled, else VaultSearch */
+  get activeSearch(): VaultSearch | EmbedSearch {
+    return this.embedSearch ?? this.search;
+  }
 
   async onload(): Promise<void> {
     // Load data
@@ -85,6 +92,9 @@ export default class MemexChatPlugin extends Plugin {
         this.search.priorityProperties = this.settings.contextProperties;
         this.search.buildIndex().catch(console.error);
       }
+      if (this.settings.useEmbeddings) {
+        this.initEmbedSearch().catch(console.error);
+      }
     });
 
     console.log("[Memex Chat] Plugin geladen");
@@ -107,19 +117,49 @@ export default class MemexChatPlugin extends Plugin {
     this.app.workspace.revealLeaf(leaf);
   }
 
+  /** Create or recreate the EmbedSearch instance (called when settings change) */
+  async initEmbedSearch(): Promise<void> {
+    if (!this.settings.useEmbeddings) {
+      this.embedSearch = null;
+      return;
+    }
+    this.embedSearch = new EmbedSearch(this.app, this.settings.embeddingModel);
+    // Don't build immediately — build on first search or explicit rebuild
+  }
+
   async rebuildIndex(): Promise<void> {
     const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_MEMEX_CHAT);
     const view = leaves[0]?.view as ChatView | undefined;
 
-    this.search.priorityProperties = this.settings.contextProperties;
-    this.search.onProgress = (done, total) => {
-      if (view && done % 200 === 0) {
-        view.setStatus(`Indiziere… ${done}/${total}`);
-      }
-    };
+    if (this.settings.useEmbeddings && this.embedSearch) {
+      // Rebuild semantic (embedding) index
+      this.embedSearch.onModelStatus = (status) => {
+        if (view) view.setStatus(status);
+      };
+      this.embedSearch.onProgress = (done, total, speed) => {
+        if (view) {
+          const speedStr = speed > 0 ? ` • ${speed.toFixed(1)} N/s` : "";
+          const eta = speed > 0 && done < total
+            ? ` • noch ~${Math.ceil((total - done) / speed)}s`
+            : "";
+          view.setStatus(`Embedding ${done}/${total}${speedStr}${eta}`);
+        }
+      };
+      await this.embedSearch.buildIndex();
+      this.embedSearch.onProgress = undefined;
+      this.embedSearch.onModelStatus = undefined;
+    } else {
+      // Rebuild TF-IDF index
+      this.search.priorityProperties = this.settings.contextProperties;
+      this.search.onProgress = (done, total) => {
+        if (view && done % 200 === 0) {
+          view.setStatus(`Indiziere… ${done}/${total}`);
+        }
+      };
+      await this.search.buildIndex();
+      this.search.onProgress = undefined;
+    }
 
-    await this.search.buildIndex();
-    this.search.onProgress = undefined;
     if (view) {
       view.setStatus(`✓ ${this.app.vault.getMarkdownFiles().length} Notizen indiziert`);
       setTimeout(() => view.setStatus(""), 3000);

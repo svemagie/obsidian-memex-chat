@@ -1,5 +1,6 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
 import type MemexChatPlugin from "./main";
+import { EMBEDDING_MODELS } from "./EmbedSearch";
 
 export interface PromptButton {
   label: string;
@@ -24,6 +25,8 @@ export interface MemexChatSettings {
   contextProperties: string[];
   promptButtons: PromptButton[];
   systemContextFile: string; // optional vault path for extended system context
+  useEmbeddings: boolean;   // use local embedding model instead of TF-IDF
+  embeddingModel: string;   // HuggingFace model ID
 }
 
 export const DEFAULT_SETTINGS: MemexChatSettings = {
@@ -47,6 +50,8 @@ Wenn du Fragen beantwortest:
   sendOnEnter: false,
   contextProperties: ["collection", "related", "up", "tags"],
   systemContextFile: "",
+  useEmbeddings: false,
+  embeddingModel: "TaylorAI/bge-micro-v2",
   promptButtons: [
     {
       label: "Draft Check",
@@ -132,6 +137,36 @@ export class MemexChatSettingsTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         })
       );
+
+    // --- Semantic Search ---
+    containerEl.createEl("h3", { text: "Semantische Suche (Embeddings)" });
+    containerEl.createEl("p", {
+      text: "Ersetzt TF-IDF durch ein lokales KI-Modell (Transformers.js). Das Modell wird beim ersten Einsatz von HuggingFace heruntergeladen und dann lokal gecacht. WASM-Laufzeit wird einmalig vom CDN geladen.",
+      cls: "setting-item-description",
+    });
+
+    new Setting(containerEl)
+      .setName("Semantische Suche aktivieren")
+      .setDesc("Nutzt lokale Embeddings für kontextbasierte Ähnlichkeitssuche statt TF-IDF")
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.useEmbeddings).onChange(async (value) => {
+          this.plugin.settings.useEmbeddings = value;
+          await this.plugin.saveSettings();
+          await this.plugin.initEmbedSearch();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Embedding-Modell")
+      .setDesc("Welches Modell für die semantische Suche verwenden? Kleiner = schneller, größer = besser.")
+      .addDropdown((drop) => {
+        for (const m of EMBEDDING_MODELS) drop.addOption(m.id, m.name);
+        drop.setValue(this.plugin.settings.embeddingModel).onChange(async (value) => {
+          this.plugin.settings.embeddingModel = value;
+          await this.plugin.saveSettings();
+          await this.plugin.initEmbedSearch();
+        });
+      });
 
     // --- Context ---
     containerEl.createEl("h3", { text: "Kontext-Einstellungen" });
@@ -428,7 +463,7 @@ export class MemexChatSettingsTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Index neu aufbauen")
-      .setDesc("Vault-Index für die Suche neu aufbauen (dauert je nach Vault-Größe einige Sekunden)")
+      .setDesc("Vault-Index neu aufbauen (TF-IDF oder Embedding-Index, je nach Einstellung)")
       .addButton((btn) =>
         btn
           .setButtonText("Index neu aufbauen")

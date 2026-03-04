@@ -120,7 +120,8 @@ export class ChatView extends ItemView {
       rebuildBtn.disabled = true;
       this.setStatus("Indiziere Vault…");
       await this.plugin.rebuildIndex();
-      this.setStatus(`✓ ${this.plugin.search.isIndexed() ? "Index bereit" : ""}`);
+      const ready = this.plugin.activeSearch.isIndexed();
+      this.setStatus(ready ? "✓ Index bereit" : "");
       setTimeout(() => this.setStatus(""), 2000);
       rebuildBtn.disabled = false;
     };
@@ -301,18 +302,43 @@ export class ChatView extends ItemView {
     this.setStatus("Suche relevante Notizen…");
     this.isLoading = true;
     try {
-      if (!this.plugin.search.isIndexed()) {
-        this.setStatus("Indiziere Vault…");
-        await this.plugin.search.buildIndex();
+      const engine = this.plugin.activeSearch;
+      if (!engine.isIndexed()) {
+        this.setStatus(this.plugin.settings.useEmbeddings ? "Lade Embedding-Modell…" : "Indiziere Vault…");
+        this.attachEmbedProgress();
+        await engine.buildIndex();
+        this.detachEmbedProgress();
       }
-      this.pendingContext = await this.plugin.search.search(query, this.plugin.settings.maxContextNotes);
+      this.pendingContext = await engine.search(query, this.plugin.settings.maxContextNotes);
       this.explicitContext = mentions;
       this.renderContextPreview();
       this.setStatus("Kontext bereit — Senden bestätigen oder anpassen");
     } catch (e) {
-      this.setStatus("Fehler bei Kontextsuche: " + e.message);
+      this.detachEmbedProgress();
+      this.setStatus("Fehler bei Kontextsuche: " + (e as Error).message);
     }
     this.isLoading = false;
+  }
+
+  /** Wire up EmbedSearch progress callbacks to the status bar */
+  private attachEmbedProgress(): void {
+    const es = this.plugin.embedSearch;
+    if (!es) return;
+    es.onModelStatus = (s) => this.setStatus(s);
+    es.onProgress = (done, total, speed) => {
+      const speedStr = speed > 0 ? ` • ${speed.toFixed(1)} N/s` : "";
+      const eta = speed > 0 && done < total
+        ? ` • ~${Math.ceil((total - done) / speed)}s`
+        : "";
+      this.setStatus(`Embedding ${done}/${total}${speedStr}${eta}`);
+    };
+  }
+
+  private detachEmbedProgress(): void {
+    const es = this.plugin.embedSearch;
+    if (!es) return;
+    es.onModelStatus = undefined;
+    es.onProgress = undefined;
   }
 
   private async sendMessage(query: string, additionalFiles: TFile[] = []): Promise<void> {
@@ -536,13 +562,19 @@ export class ChatView extends ItemView {
     const query = this.inputEl.value.trim() || lastUserMsg;
     this.setStatus("Suche Notizen…");
     try {
-      if (!this.plugin.search.isIndexed()) await this.plugin.search.buildIndex();
-      const results = await this.plugin.search.search(query, this.plugin.settings.maxContextNotes);
+      const engine = this.plugin.activeSearch;
+      if (!engine.isIndexed()) {
+        this.attachEmbedProgress();
+        await engine.buildIndex();
+        this.detachEmbedProgress();
+      }
+      const results = await engine.search(query, this.plugin.settings.maxContextNotes);
       this.pendingContext = results;
       this.renderContextPreview();
       this.setStatus("");
     } catch (e) {
-      this.setStatus("Fehler: " + e.message);
+      this.detachEmbedProgress();
+      this.setStatus("Fehler: " + (e as Error).message);
     }
   }
 

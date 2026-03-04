@@ -21,10 +21,14 @@ const context = await esbuild.context({
     "@lezer/common",
     "@lezer/highlight",
     "@lezer/lr",
+    // Native modules used by onnxruntime — not bundleable, loaded by Node.js at runtime
+    "onnxruntime-node",
+    "sharp",
+    "canvas",
     ...builtins,
   ],
   format: "cjs",
-  target: "es2018",
+  target: "es2020", // raised from es2018 to support BigInt used by @xenova/transformers
   logLevel: "info",
   sourcemap: prod ? false : "inline",
   treeShaking: true,
