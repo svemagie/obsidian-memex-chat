@@ -35,6 +35,9 @@ var ChatView = class extends import_obsidian.ItemView {
     this.pendingContext = [];
     this.explicitContext = [];
     this.isLoading = false;
+    // Mention autocomplete state
+    this.mentionSelectedIdx = 0;
+    this.mentionMatches = [];
     this.plugin = plugin;
     this.renderComponent = new import_obsidian.Component();
   }
@@ -93,6 +96,8 @@ var ChatView = class extends import_obsidian.ItemView {
     this.contextPreviewEl.style.display = "none";
     const inputArea = chatArea.createDiv("vc-input-area");
     const inputWrapper = inputArea.createDiv("vc-input-wrapper");
+    this.mentionDropdownEl = inputWrapper.createDiv("vc-mention-dropdown");
+    this.mentionDropdownEl.style.display = "none";
     this.inputEl = inputWrapper.createEl("textarea", {
       cls: "vc-input",
       attr: { placeholder: "Frage stellen\u2026 (@ f\xFCr Notiz einf\xFCgen)" }
@@ -106,6 +111,28 @@ var ChatView = class extends import_obsidian.ItemView {
     this.sendBtn.setText("Senden");
     this.sendBtn.onclick = () => this.handleSend();
     this.inputEl.addEventListener("keydown", (e) => {
+      if (this.mentionDropdownEl.style.display !== "none") {
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          this.moveMentionSelection(1);
+          return;
+        }
+        if (e.key === "ArrowUp") {
+          e.preventDefault();
+          this.moveMentionSelection(-1);
+          return;
+        }
+        if (e.key === "Enter" || e.key === "Tab") {
+          e.preventDefault();
+          this.confirmMentionSelection();
+          return;
+        }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          this.hideMentionDropdown();
+          return;
+        }
+      }
       if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         this.handleSend();
@@ -418,8 +445,71 @@ ${content}`;
     this.statusEl.style.display = text ? "block" : "none";
   }
   handleInputChange() {
+    var _a;
     this.inputEl.style.height = "auto";
     this.inputEl.style.height = Math.min(this.inputEl.scrollHeight, 200) + "px";
+    const cursor = (_a = this.inputEl.selectionStart) != null ? _a : 0;
+    const textBefore = this.inputEl.value.slice(0, cursor);
+    const match = textBefore.match(/@([^@\n[\]]{2,})$/);
+    if (match) {
+      this.updateMentionDropdown(match[1]);
+    } else {
+      this.hideMentionDropdown();
+    }
+  }
+  updateMentionDropdown(query) {
+    const lower = query.toLowerCase();
+    this.mentionMatches = this.app.vault.getMarkdownFiles().map((f) => f.basename).filter((name) => name.toLowerCase().includes(lower)).slice(0, 8);
+    if (this.mentionMatches.length === 0) {
+      this.hideMentionDropdown();
+      return;
+    }
+    this.mentionSelectedIdx = 0;
+    this.renderMentionDropdown();
+    this.mentionDropdownEl.style.display = "block";
+  }
+  renderMentionDropdown() {
+    this.mentionDropdownEl.empty();
+    this.mentionMatches.forEach((name, i) => {
+      const item = this.mentionDropdownEl.createDiv(
+        i === this.mentionSelectedIdx ? "vc-mention-item vc-mention-item--active" : "vc-mention-item"
+      );
+      item.setText(name);
+      item.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        this.insertMention(name);
+      });
+    });
+  }
+  moveMentionSelection(dir) {
+    this.mentionSelectedIdx = (this.mentionSelectedIdx + dir + this.mentionMatches.length) % this.mentionMatches.length;
+    this.renderMentionDropdown();
+  }
+  confirmMentionSelection() {
+    const name = this.mentionMatches[this.mentionSelectedIdx];
+    if (name)
+      this.insertMention(name);
+  }
+  insertMention(basename) {
+    var _a;
+    const cursor = (_a = this.inputEl.selectionStart) != null ? _a : 0;
+    const text = this.inputEl.value;
+    const textBefore = text.slice(0, cursor);
+    const match = textBefore.match(/@([^@\n[\]]{2,})$/);
+    if (!match)
+      return;
+    const start = cursor - match[0].length;
+    const replacement = `[[${basename}]]`;
+    this.inputEl.value = text.slice(0, start) + replacement + text.slice(cursor);
+    const newCursor = start + replacement.length;
+    this.inputEl.setSelectionRange(newCursor, newCursor);
+    this.hideMentionDropdown();
+  }
+  hideMentionDropdown() {
+    this.mentionDropdownEl.style.display = "none";
+    this.mentionDropdownEl.empty();
+    this.mentionMatches = [];
+    this.mentionSelectedIdx = 0;
   }
   // ─── Persistence ─────────────────────────────────────────────────────────
   loadThreads() {

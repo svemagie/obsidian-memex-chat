@@ -400,7 +400,37 @@
 }
 
 .vc-input-wrapper {
+  position: relative;
   margin-bottom: 6px;
+}
+
+.vc-mention-dropdown {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+  z-index: 100;
+}
+
+.vc-mention-item {
+  padding: 7px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--text-normal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vc-mention-item:hover,
+.vc-mention-item--active {
+  background: var(--background-modifier-hover);
+  color: var(--text-accent);
 }
 
 .vc-input {
