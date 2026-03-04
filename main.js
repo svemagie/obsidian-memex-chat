@@ -211,14 +211,13 @@ var ChatView = class extends import_obsidian.ItemView {
       this.setStatus("\u26A0 Bitte API Key in den Einstellungen eingeben");
       return;
     }
-    const mentionPattern = /@([\w\däöüÄÖÜß][^@\n]{1,}?)(?=\s|$)/g;
     const mentions = [];
-    let match;
-    while ((match = mentionPattern.exec(query)) !== null) {
-      const name = match[1].trim();
-      const file = this.app.metadataCache.getFirstLinkpathDest(name, "");
-      if (file)
+    const seenPaths = /* @__PURE__ */ new Set();
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      if (query.includes(`@${file.basename}`) && !seenPaths.has(file.path)) {
         mentions.push(file);
+        seenPaths.add(file.path);
+      }
     }
     if (this.activeExtensions.size === 0) {
       if (this.plugin.settings.autoRetrieveContext && this.plugin.settings.showContextPreview) {
@@ -260,7 +259,7 @@ var ChatView = class extends import_obsidian.ItemView {
     this.isLoading = false;
   }
   async sendMessage(query, additionalFiles = []) {
-    var _a, _b;
+    var _a, _b, _c, _d;
     this.isLoading = true;
     this.sendBtn.disabled = true;
     const thread = this.activeThread;
@@ -299,6 +298,7 @@ ${content}`;
     this.pendingContext = [];
     this.explicitContext = [];
     this.clearContextPreview();
+    this.modeHintEl.style.display = "none";
     this.renderMessages();
     this.renderThreadList();
     const assistantMsg = {
@@ -309,7 +309,7 @@ ${content}`;
     };
     thread.messages.push(assistantMsg);
     this.renderMessages();
-    const claudeMessages = thread.messages.slice(0, -1).map((m) => ({
+    const claudeMessages = thread.messages.slice(0, -1).slice(-10).map((m) => ({
       role: m.role,
       content: m.content
     }));
@@ -319,8 +319,15 @@ ${content}`;
     });
     this.setStatus("Claude denkt\u2026");
     let systemPrompt = this.plugin.settings.systemPrompt;
+    const ctxPath = this.plugin.settings.systemContextFile;
+    if (ctxPath) {
+      const ctxFile = (_b = (_a = this.app.metadataCache.getFirstLinkpathDest(ctxPath, "")) != null ? _a : this.app.vault.getAbstractFileByPath(ctxPath + ".md")) != null ? _b : this.app.vault.getAbstractFileByPath(ctxPath);
+      if (ctxFile instanceof import_obsidian.TFile) {
+        systemPrompt += "\n\n---\n" + await this.app.vault.cachedRead(ctxFile);
+      }
+    }
     for (const filePath of this.activeExtensions) {
-      const file = (_b = (_a = this.app.metadataCache.getFirstLinkpathDest(filePath, "")) != null ? _a : this.app.vault.getAbstractFileByPath(filePath + ".md")) != null ? _b : this.app.vault.getAbstractFileByPath(filePath);
+      const file = (_d = (_c = this.app.metadataCache.getFirstLinkpathDest(filePath, "")) != null ? _c : this.app.vault.getAbstractFileByPath(filePath + ".md")) != null ? _d : this.app.vault.getAbstractFileByPath(filePath);
       if (file instanceof import_obsidian.TFile) {
         const ext = await this.app.vault.cachedRead(file);
         systemPrompt += "\n\n---\n" + ext;
@@ -1190,6 +1197,7 @@ Wenn du Fragen beantwortest:
   threadsFolder: "Calendar/Chat",
   sendOnEnter: false,
   contextProperties: ["collection", "related", "up", "tags"],
+  systemContextFile: "",
   promptButtons: [
     {
       label: "Draft Check",
@@ -1401,9 +1409,15 @@ var MemexChatSettingsTab = class extends import_obsidian3.PluginSettingTab {
         const helpLabel = card.createEl("label", { cls: "vc-pbtn-folder-label", text: "Hilfetext (optional, erscheint im Chat wenn Button aktiv):" });
         const helpTextArea = card.createEl("textarea", {
           cls: "vc-pbtn-help-textarea",
-          attr: { rows: "3", placeholder: "z.B. DRAFT \u2014 Fr\xFChphase\u2026\nPRE-PUBLISH \u2014 Fast fertig\u2026" }
+          attr: { placeholder: "z.B. DRAFT \u2014 Fr\xFChphase\u2026\nPRE-PUBLISH \u2014 Fast fertig\u2026" }
         });
         helpTextArea.value = (_a = pb.helpText) != null ? _a : "";
+        const updateHelpRows = () => {
+          const lines = helpTextArea.value.split("\n").length;
+          helpTextArea.rows = helpTextArea.value.trim() ? Math.max(2, lines) : 1;
+        };
+        updateHelpRows();
+        helpTextArea.addEventListener("input", updateHelpRows);
         helpTextArea.addEventListener("change", async () => {
           pb.helpText = helpTextArea.value.trim() || void 0;
           await this.plugin.saveSettings();
@@ -1454,6 +1468,12 @@ var MemexChatSettingsTab = class extends import_obsidian3.PluginSettingTab {
       textarea.inputEl.style.fontFamily = "monospace";
       textarea.inputEl.style.fontSize = "12px";
     });
+    new import_obsidian3.Setting(containerEl).setName("System Context (Datei)").setDesc("Optionale Vault-Notiz, deren Inhalt an den System Prompt angeh\xE4ngt wird (Pfad ohne .md)").addText(
+      (text) => text.setPlaceholder("z.B. Prompts/Mein System Context").setValue(this.plugin.settings.systemContextFile).onChange(async (value) => {
+        this.plugin.settings.systemContextFile = value.trim();
+        await this.plugin.saveSettings();
+      })
+    );
     containerEl.createEl("h3", { text: "Aktionen" });
     new import_obsidian3.Setting(containerEl).setName("Index neu aufbauen").setDesc("Vault-Index f\xFCr die Suche neu aufbauen (dauert je nach Vault-Gr\xF6\xDFe einige Sekunden)").addButton(
       (btn) => btn.setButtonText("Index neu aufbauen").setCta().onClick(async () => {

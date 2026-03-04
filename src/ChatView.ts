@@ -260,14 +260,14 @@ export class ChatView extends ItemView {
       return;
     }
 
-    // Parse @Notizname mentions from input
-    const mentionPattern = /@([\w\däöüÄÖÜß][^@\n]{1,}?)(?=\s|$)/g;
+    // Parse @Notizname mentions — match against actual vault filenames to handle spaces & special chars
     const mentions: TFile[] = [];
-    let match;
-    while ((match = mentionPattern.exec(query)) !== null) {
-      const name = match[1].trim();
-      const file = this.app.metadataCache.getFirstLinkpathDest(name, "");
-      if (file) mentions.push(file);
+    const seenPaths = new Set<string>();
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      if (query.includes(`@${file.basename}`) && !seenPaths.has(file.path)) {
+        mentions.push(file);
+        seenPaths.add(file.path);
+      }
     }
 
     // With active prompt extensions, skip auto-retrieve and clear any leftover context
@@ -362,6 +362,7 @@ export class ChatView extends ItemView {
     this.pendingContext = [];
     this.explicitContext = [];
     this.clearContextPreview();
+    this.modeHintEl.style.display = "none";
     this.renderMessages();
     this.renderThreadList();
 
@@ -375,9 +376,10 @@ export class ChatView extends ItemView {
     thread.messages.push(assistantMsg);
     this.renderMessages();
 
-    // Build Claude messages (history)
+    // Build Claude messages (history) — cap at last 10 messages to limit API payload
     const claudeMessages: ClaudeMessage[] = thread.messages
       .slice(0, -1) // exclude the empty assistant msg we just added
+      .slice(-10)   // keep only the last 10 messages
       .map((m) => ({
         role: m.role,
         content: m.content,
@@ -391,8 +393,18 @@ export class ChatView extends ItemView {
 
     this.setStatus("Claude denkt…");
 
-    // Build effective system prompt (base + any active extensions)
+    // Build effective system prompt (base + optional system context file + active extensions)
     let systemPrompt = this.plugin.settings.systemPrompt;
+    const ctxPath = this.plugin.settings.systemContextFile;
+    if (ctxPath) {
+      const ctxFile =
+        this.app.metadataCache.getFirstLinkpathDest(ctxPath, "") ??
+        (this.app.vault.getAbstractFileByPath(ctxPath + ".md") as TFile | null) ??
+        (this.app.vault.getAbstractFileByPath(ctxPath) as TFile | null);
+      if (ctxFile instanceof TFile) {
+        systemPrompt += "\n\n---\n" + await this.app.vault.cachedRead(ctxFile);
+      }
+    }
     for (const filePath of this.activeExtensions) {
       const file =
         this.app.metadataCache.getFirstLinkpathDest(filePath, "") ??

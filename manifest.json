@@ -1,7 +1,7 @@
 {
   "id": "memex-chat",
   "name": "Memex Chat",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "minAppVersion": "1.4.0",
   "description": "Chat with your Obsidian vault using Claude AI — semantic context retrieval, @ mentions, thread history.",
   "author": "Sven",

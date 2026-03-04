@@ -22,6 +22,7 @@ export interface MemexChatSettings {
   sendOnEnter: boolean;
   contextProperties: string[];
   promptButtons: PromptButton[];
+  systemContextFile: string; // optional vault path for extended system context
 }
 
 export const DEFAULT_SETTINGS: MemexChatSettings = {
@@ -43,6 +44,7 @@ Wenn du Fragen beantwortest:
   threadsFolder: "Calendar/Chat",
   sendOnEnter: false,
   contextProperties: ["collection", "related", "up", "tags"],
+  systemContextFile: "",
   promptButtons: [
     {
       label: "Draft Check",
@@ -309,9 +311,16 @@ export class MemexChatSettingsTab extends PluginSettingTab {
         const helpLabel = card.createEl("label", { cls: "vc-pbtn-folder-label", text: "Hilfetext (optional, erscheint im Chat wenn Button aktiv):" });
         const helpTextArea = card.createEl("textarea", {
           cls: "vc-pbtn-help-textarea",
-          attr: { rows: "3", placeholder: "z.B. DRAFT — Frühphase…\nPRE-PUBLISH — Fast fertig…" },
+          attr: { placeholder: "z.B. DRAFT — Frühphase…\nPRE-PUBLISH — Fast fertig…" },
         }) as HTMLTextAreaElement;
         helpTextArea.value = pb.helpText ?? "";
+        // 1 row when empty, auto-fit to content when filled
+        const updateHelpRows = () => {
+          const lines = helpTextArea.value.split("\n").length;
+          helpTextArea.rows = helpTextArea.value.trim() ? Math.max(2, lines) : 1;
+        };
+        updateHelpRows();
+        helpTextArea.addEventListener("input", updateHelpRows);
         helpTextArea.addEventListener("change", async () => {
           pb.helpText = helpTextArea.value.trim() || undefined;
           await this.plugin.saveSettings();
@@ -384,6 +393,19 @@ export class MemexChatSettingsTab extends PluginSettingTab {
         textarea.inputEl.style.fontFamily = "monospace";
         textarea.inputEl.style.fontSize = "12px";
       });
+
+    new Setting(containerEl)
+      .setName("System Context (Datei)")
+      .setDesc("Optionale Vault-Notiz, deren Inhalt an den System Prompt angehängt wird (Pfad ohne .md)")
+      .addText((text) =>
+        text
+          .setPlaceholder("z.B. Prompts/Mein System Context")
+          .setValue(this.plugin.settings.systemContextFile)
+          .onChange(async (value) => {
+            this.plugin.settings.systemContextFile = value.trim();
+            await this.plugin.saveSettings();
+          })
+      );
 
     // --- Actions ---
     containerEl.createEl("h3", { text: "Aktionen" });
