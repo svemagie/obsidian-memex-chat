@@ -223,36 +223,52 @@
 }
 
 /* Markdown rendering inside bubble */
+.vc-md {
+  line-height: 1.65;
+}
 .vc-md p {
-  margin: 0 0 8px;
+  margin: 0 0 10px;
 }
 .vc-md p:last-child {
   margin-bottom: 0;
 }
 .vc-md h1, .vc-md h2, .vc-md h3 {
-  margin: 12px 0 6px;
+  margin: 16px 0 6px;
   font-size: 1em;
   font-weight: 600;
 }
+.vc-md h1:first-child, .vc-md h2:first-child, .vc-md h3:first-child {
+  margin-top: 4px;
+}
 .vc-md code {
   background: var(--background-primary-alt);
-  padding: 1px 4px;
+  padding: 1px 5px;
   border-radius: 3px;
-  font-size: 0.9em;
+  font-size: 0.88em;
 }
 .vc-md pre {
   background: var(--background-primary-alt);
-  padding: 8px 10px;
+  padding: 10px 12px;
   border-radius: 6px;
   overflow-x: auto;
   font-size: 12px;
+  margin: 10px 0;
+  line-height: 1.5;
+}
+.vc-md pre code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
 }
 .vc-md ul, .vc-md ol {
-  padding-left: 20px;
-  margin: 4px 0;
+  padding-left: 22px;
+  margin: 6px 0 10px;
 }
 .vc-md li {
-  margin: 2px 0;
+  margin: 4px 0;
+}
+.vc-md li > ul, .vc-md li > ol {
+  margin: 4px 0;
 }
 .vc-md a.internal-link {
   color: var(--text-accent);
@@ -264,9 +280,25 @@
 }
 .vc-md blockquote {
   border-left: 3px solid var(--text-muted);
-  margin: 8px 0;
-  padding: 4px 8px;
+  margin: 10px 0;
+  padding: 6px 10px;
   color: var(--text-muted);
+}
+.vc-md hr {
+  border: none;
+  border-top: 1px solid var(--background-modifier-border);
+  margin: 12px 0;
+}
+.vc-md table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 10px 0;
+  font-size: 12px;
+}
+.vc-md th, .vc-md td {
+  border: 1px solid var(--background-modifier-border);
+  padding: 5px 8px;
+  text-align: left;
 }
 
 /* Streaming cursor */
