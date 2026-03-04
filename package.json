@@ -1,6 +1,6 @@
 {
   "name": "memex-chat",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Obsidian plugin: Chat with your vault using Claude AI",
   "main": "main.js",
   "scripts": {

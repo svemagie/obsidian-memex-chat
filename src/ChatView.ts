@@ -904,9 +904,16 @@ export class ChatView extends ItemView {
       const folder = this.plugin.settings.threadsFolder;
       await this.app.vault.createFolder(folder).catch(() => {});
 
-      const date = new Date(thread.created).toISOString().slice(0, 10);
+      const d = new Date(thread.created);
+      const ts = d.getFullYear().toString()
+        + String(d.getMonth() + 1).padStart(2, "0")
+        + String(d.getDate()).padStart(2, "0")
+        + String(d.getHours()).padStart(2, "0")
+        + String(d.getMinutes()).padStart(2, "0")
+        + String(d.getSeconds()).padStart(2, "0");
+      const date = d.toISOString().slice(0, 10);
       const safeName = thread.title.replace(/[\\/:*?"<>|]/g, " ").slice(0, 60);
-      const fileName = `${folder}/${date} ${safeName}.md`;
+      const fileName = `${folder}/${ts} ${safeName}.md`;
 
       let content = `---\ncreated: ${date}\nid: ${thread.id}\ntags: [chat]\n---\n\n# ${thread.title}\n\n`;
       for (const msg of thread.messages) {
