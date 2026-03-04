@@ -1,3 +1,5 @@
+import { requestUrl } from "obsidian";
+
 export interface ClaudeMessage {
   role: "user" | "assistant";
   content: string;
@@ -20,19 +22,24 @@ export interface ClaudeStreamChunk {
 export class ClaudeClient {
   private baseUrl = "https://api.anthropic.com/v1/messages";
 
+  private headers(apiKey: string): Record<string, string> {
+    return {
+      "content-type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    };
+  }
+
   /** Stream a chat completion, yielding text chunks */
   async *streamChat(
     messages: ClaudeMessage[],
     options: ClaudeOptions
   ): AsyncGenerator<ClaudeStreamChunk> {
+    // Use native fetch for streaming (requestUrl doesn't support streaming).
+    // The outdated anthropic-beta header is omitted — streaming is stable API.
     const response = await fetch(this.baseUrl, {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": options.apiKey,
-        "anthropic-version": "2023-06-01",
-        "anthropic-beta": "messages-2023-12-15",
-      },
+      headers: this.headers(options.apiKey),
       body: JSON.stringify({
         model: options.model,
         max_tokens: options.maxTokens ?? 2048,
@@ -90,29 +97,25 @@ export class ClaudeClient {
     yield { type: "done" };
   }
 
-  /** Non-streaming version for simpler use cases */
+  /** Non-streaming version — uses Obsidian's requestUrl to bypass CORS */
   async chat(messages: ClaudeMessage[], options: ClaudeOptions): Promise<string> {
-    const response = await fetch(this.baseUrl, {
+    const response = await requestUrl({
+      url: this.baseUrl,
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": options.apiKey,
-        "anthropic-version": "2023-06-01",
-      },
+      headers: this.headers(options.apiKey),
       body: JSON.stringify({
         model: options.model,
         max_tokens: options.maxTokens ?? 2048,
         system: options.systemPrompt,
         messages,
       }),
+      throw: false,
     });
 
-    if (!response.ok) {
-      const err = await response.text();
-      throw new Error(`API Error ${response.status}: ${err}`);
+    if (response.status >= 400) {
+      throw new Error(`API Error ${response.status}: ${response.text}`);
     }
 
-    const data = await response.json();
-    return data.content?.[0]?.text ?? "";
+    return response.json.content?.[0]?.text ?? "";
   }
 }

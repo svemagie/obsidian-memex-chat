@@ -19,14 +19,14 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // src/main.ts
 var main_exports = {};
 __export(main_exports, {
-  default: () => VaultChatPlugin
+  default: () => MemexChatPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian3 = require("obsidian");
+var import_obsidian4 = require("obsidian");
 
 // src/ChatView.ts
 var import_obsidian = require("obsidian");
-var VIEW_TYPE_VAULT_CHAT = "vault-chat-view";
+var VIEW_TYPE_MEMEX_CHAT = "memex-chat-view";
 var ChatView = class extends import_obsidian.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
@@ -39,10 +39,10 @@ var ChatView = class extends import_obsidian.ItemView {
     this.renderComponent = new import_obsidian.Component();
   }
   getViewType() {
-    return VIEW_TYPE_VAULT_CHAT;
+    return VIEW_TYPE_MEMEX_CHAT;
   }
   getDisplayText() {
-    return "Vault Chat";
+    return "Memex Chat";
   }
   getIcon() {
     return "message-circle";
@@ -67,7 +67,7 @@ var ChatView = class extends import_obsidian.ItemView {
     root.empty();
     root.addClass("vc-root");
     const header = root.createDiv("vc-header");
-    header.createEl("span", { text: "Vault Chat", cls: "vc-header-title" });
+    header.createEl("span", { text: "Memex Chat", cls: "vc-header-title" });
     const headerActions = header.createDiv("vc-header-actions");
     const newThreadBtn = headerActions.createEl("button", { cls: "vc-icon-btn", title: "Neuer Thread" });
     newThreadBtn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none"><path d="M12 5v14M5 12h14" stroke-width="2" stroke-linecap="round"/></svg>`;
@@ -645,21 +645,24 @@ var VaultSearch = class {
 };
 
 // src/ClaudeClient.ts
+var import_obsidian2 = require("obsidian");
 var ClaudeClient = class {
   constructor() {
     this.baseUrl = "https://api.anthropic.com/v1/messages";
+  }
+  headers(apiKey) {
+    return {
+      "content-type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01"
+    };
   }
   /** Stream a chat completion, yielding text chunks */
   async *streamChat(messages, options) {
     var _a, _b, _c, _d, _e, _f;
     const response = await fetch(this.baseUrl, {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": options.apiKey,
-        "anthropic-version": "2023-06-01",
-        "anthropic-beta": "messages-2023-12-15"
-      },
+      headers: this.headers(options.apiKey),
       body: JSON.stringify({
         model: options.model,
         max_tokens: (_a = options.maxTokens) != null ? _a : 2048,
@@ -712,34 +715,30 @@ var ClaudeClient = class {
     }
     yield { type: "done" };
   }
-  /** Non-streaming version for simpler use cases */
+  /** Non-streaming version — uses Obsidian's requestUrl to bypass CORS */
   async chat(messages, options) {
     var _a, _b, _c, _d;
-    const response = await fetch(this.baseUrl, {
+    const response = await (0, import_obsidian2.requestUrl)({
+      url: this.baseUrl,
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": options.apiKey,
-        "anthropic-version": "2023-06-01"
-      },
+      headers: this.headers(options.apiKey),
       body: JSON.stringify({
         model: options.model,
         max_tokens: (_a = options.maxTokens) != null ? _a : 2048,
         system: options.systemPrompt,
         messages
-      })
+      }),
+      throw: false
     });
-    if (!response.ok) {
-      const err = await response.text();
-      throw new Error(`API Error ${response.status}: ${err}`);
+    if (response.status >= 400) {
+      throw new Error(`API Error ${response.status}: ${response.text}`);
     }
-    const data = await response.json();
-    return (_d = (_c = (_b = data.content) == null ? void 0 : _b[0]) == null ? void 0 : _c.text) != null ? _d : "";
+    return (_d = (_c = (_b = response.json.content) == null ? void 0 : _b[0]) == null ? void 0 : _c.text) != null ? _d : "";
   }
 };
 
 // src/SettingsTab.ts
-var import_obsidian2 = require("obsidian");
+var import_obsidian3 = require("obsidian");
 var DEFAULT_SETTINGS = {
   apiKey: "",
   model: "claude-opus-4-5-20251101",
@@ -764,7 +763,7 @@ var MODELS = [
   { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4.5 (Schnell)" },
   { id: "claude-opus-4-5-20251101", name: "Claude Opus 4.5" }
 ];
-var VaultChatSettingsTab = class extends import_obsidian2.PluginSettingTab {
+var MemexChatSettingsTab = class extends import_obsidian3.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
@@ -772,15 +771,15 @@ var VaultChatSettingsTab = class extends import_obsidian2.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: "Vault Chat Einstellungen" });
+    containerEl.createEl("h2", { text: "Memex Chat Einstellungen" });
     containerEl.createEl("h3", { text: "Claude API" });
-    new import_obsidian2.Setting(containerEl).setName("API Key").setDesc("Dein Anthropic API Key (sk-ant-...)").addText(
+    new import_obsidian3.Setting(containerEl).setName("API Key").setDesc("Dein Anthropic API Key (sk-ant-...)").addText(
       (text) => text.setPlaceholder("sk-ant-api03-...").setValue(this.plugin.settings.apiKey).onChange(async (value) => {
         this.plugin.settings.apiKey = value.trim();
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian2.Setting(containerEl).setName("Modell").setDesc("Welches Claude-Modell verwenden?").addDropdown((drop) => {
+    new import_obsidian3.Setting(containerEl).setName("Modell").setDesc("Welches Claude-Modell verwenden?").addDropdown((drop) => {
       for (const m of MODELS)
         drop.addOption(m.id, m.name);
       drop.setValue(this.plugin.settings.model).onChange(async (value) => {
@@ -789,45 +788,45 @@ var VaultChatSettingsTab = class extends import_obsidian2.PluginSettingTab {
       });
     });
     containerEl.createEl("h3", { text: "Kontext-Einstellungen" });
-    new import_obsidian2.Setting(containerEl).setName("Max. Kontext-Notizen").setDesc("Wie viele Notizen werden automatisch als Kontext hinzugef\xFCgt? (1\u201315)").addSlider(
+    new import_obsidian3.Setting(containerEl).setName("Max. Kontext-Notizen").setDesc("Wie viele Notizen werden automatisch als Kontext hinzugef\xFCgt? (1\u201315)").addSlider(
       (slider) => slider.setLimits(1, 15, 1).setValue(this.plugin.settings.maxContextNotes).setDynamicTooltip().onChange(async (value) => {
         this.plugin.settings.maxContextNotes = value;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian2.Setting(containerEl).setName("Max. Zeichen pro Notiz").setDesc("Wie viele Zeichen einer Notiz in den Kontext einbezogen werden (1000\u20138000)").addSlider(
+    new import_obsidian3.Setting(containerEl).setName("Max. Zeichen pro Notiz").setDesc("Wie viele Zeichen einer Notiz in den Kontext einbezogen werden (1000\u20138000)").addSlider(
       (slider) => slider.setLimits(1e3, 8e3, 500).setValue(this.plugin.settings.maxCharsPerNote).setDynamicTooltip().onChange(async (value) => {
         this.plugin.settings.maxCharsPerNote = value;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian2.Setting(containerEl).setName("Automatischer Kontext-Abruf").setDesc("Beim Senden automatisch relevante Notizen suchen und einbinden").addToggle(
+    new import_obsidian3.Setting(containerEl).setName("Automatischer Kontext-Abruf").setDesc("Beim Senden automatisch relevante Notizen suchen und einbinden").addToggle(
       (toggle) => toggle.setValue(this.plugin.settings.autoRetrieveContext).onChange(async (value) => {
         this.plugin.settings.autoRetrieveContext = value;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian2.Setting(containerEl).setName("Kontext-Vorschau anzeigen").setDesc("Vor dem Senden zeigen, welche Notizen als Kontext verwendet werden").addToggle(
+    new import_obsidian3.Setting(containerEl).setName("Kontext-Vorschau anzeigen").setDesc("Vor dem Senden zeigen, welche Notizen als Kontext verwendet werden").addToggle(
       (toggle) => toggle.setValue(this.plugin.settings.showContextPreview).onChange(async (value) => {
         this.plugin.settings.showContextPreview = value;
         await this.plugin.saveSettings();
       })
     );
     containerEl.createEl("h3", { text: "Thread-History" });
-    new import_obsidian2.Setting(containerEl).setName("Threads im Vault speichern").setDesc("Chat-Threads als Markdown-Notizen im Vault ablegen").addToggle(
+    new import_obsidian3.Setting(containerEl).setName("Threads im Vault speichern").setDesc("Chat-Threads als Markdown-Notizen im Vault ablegen").addToggle(
       (toggle) => toggle.setValue(this.plugin.settings.saveThreadsToVault).onChange(async (value) => {
         this.plugin.settings.saveThreadsToVault = value;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian2.Setting(containerEl).setName("Threads-Ordner").setDesc("Pfad im Vault, wo Chat-Threads gespeichert werden").addText(
+    new import_obsidian3.Setting(containerEl).setName("Threads-Ordner").setDesc("Pfad im Vault, wo Chat-Threads gespeichert werden").addText(
       (text) => text.setPlaceholder("Calendar/Chat").setValue(this.plugin.settings.threadsFolder).onChange(async (value) => {
         this.plugin.settings.threadsFolder = value;
         await this.plugin.saveSettings();
       })
     );
     containerEl.createEl("h3", { text: "System Prompt" });
-    new import_obsidian2.Setting(containerEl).setName("System Prompt").setDesc("Instruktionen f\xFCr Claude (wie soll er sich verhalten?)").addTextArea((textarea) => {
+    new import_obsidian3.Setting(containerEl).setName("System Prompt").setDesc("Instruktionen f\xFCr Claude (wie soll er sich verhalten?)").addTextArea((textarea) => {
       textarea.setValue(this.plugin.settings.systemPrompt).onChange(async (value) => {
         this.plugin.settings.systemPrompt = value;
         await this.plugin.saveSettings();
@@ -838,7 +837,7 @@ var VaultChatSettingsTab = class extends import_obsidian2.PluginSettingTab {
       textarea.inputEl.style.fontSize = "12px";
     });
     containerEl.createEl("h3", { text: "Aktionen" });
-    new import_obsidian2.Setting(containerEl).setName("Index neu aufbauen").setDesc("Vault-Index f\xFCr die Suche neu aufbauen (dauert je nach Vault-Gr\xF6\xDFe einige Sekunden)").addButton(
+    new import_obsidian3.Setting(containerEl).setName("Index neu aufbauen").setDesc("Vault-Index f\xFCr die Suche neu aufbauen (dauert je nach Vault-Gr\xF6\xDFe einige Sekunden)").addButton(
       (btn) => btn.setButtonText("Index neu aufbauen").setCta().onClick(async () => {
         btn.setButtonText("Indiziere\u2026");
         btn.setDisabled(true);
@@ -854,7 +853,7 @@ var VaultChatSettingsTab = class extends import_obsidian2.PluginSettingTab {
 };
 
 // src/main.ts
-var VaultChatPlugin = class extends import_obsidian3.Plugin {
+var MemexChatPlugin = class extends import_obsidian4.Plugin {
   async onload() {
     var _a, _b;
     const loaded = await this.loadData();
@@ -865,28 +864,28 @@ var VaultChatPlugin = class extends import_obsidian3.Plugin {
     this.settings = this.data.settings;
     this.search = new VaultSearch(this.app);
     this.claude = new ClaudeClient();
-    this.registerView(VIEW_TYPE_VAULT_CHAT, (leaf) => new ChatView(leaf, this));
-    this.addRibbonIcon("message-circle", "Vault Chat \xF6ffnen", () => {
+    this.registerView(VIEW_TYPE_MEMEX_CHAT, (leaf) => new ChatView(leaf, this));
+    this.addRibbonIcon("message-circle", "Memex Chat \xF6ffnen", () => {
       this.activateView();
     });
     this.addCommand({
-      id: "open-vault-chat",
-      name: "Vault Chat \xF6ffnen",
+      id: "open-memex-chat",
+      name: "Memex Chat \xF6ffnen",
       callback: () => this.activateView()
     });
     this.addCommand({
-      id: "vault-chat-rebuild-index",
-      name: "Vault Chat: Index neu aufbauen",
+      id: "memex-chat-rebuild-index",
+      name: "Memex Chat: Index neu aufbauen",
       callback: () => this.rebuildIndex()
     });
     this.addCommand({
-      id: "vault-chat-active-note",
-      name: "Vault Chat: Aktive Notiz als Kontext",
+      id: "memex-chat-active-note",
+      name: "Memex Chat: Aktive Notiz als Kontext",
       callback: () => {
         const file = this.app.workspace.getActiveFile();
         if (file) {
           this.activateView().then(() => {
-            const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_VAULT_CHAT)[0];
+            const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_MEMEX_CHAT)[0];
             if (leaf) {
               const view = leaf.view;
               view.inputEl.value = `Erkl\xE4re und verkn\xFCpfe [[${file.basename}]] mit anderen Konzepten im Vault.`;
@@ -896,19 +895,19 @@ var VaultChatPlugin = class extends import_obsidian3.Plugin {
         }
       }
     });
-    this.addSettingTab(new VaultChatSettingsTab(this.app, this));
+    this.addSettingTab(new MemexChatSettingsTab(this.app, this));
     setTimeout(() => {
       if (!this.search.isIndexed()) {
         this.search.buildIndex().catch(console.error);
       }
     }, 3e3);
-    console.log("[Vault Chat] Plugin geladen");
+    console.log("[Memex Chat] Plugin geladen");
   }
   onunload() {
-    this.app.workspace.detachLeavesOfType(VIEW_TYPE_VAULT_CHAT);
+    this.app.workspace.detachLeavesOfType(VIEW_TYPE_MEMEX_CHAT);
   }
   async activateView() {
-    const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_VAULT_CHAT);
+    const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_MEMEX_CHAT);
     if (existing.length > 0) {
       this.app.workspace.revealLeaf(existing[0]);
       return;
@@ -916,12 +915,12 @@ var VaultChatPlugin = class extends import_obsidian3.Plugin {
     const leaf = this.app.workspace.getRightLeaf(false);
     if (!leaf)
       return;
-    await leaf.setViewState({ type: VIEW_TYPE_VAULT_CHAT, active: true });
+    await leaf.setViewState({ type: VIEW_TYPE_MEMEX_CHAT, active: true });
     this.app.workspace.revealLeaf(leaf);
   }
   async rebuildIndex() {
     var _a;
-    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_VAULT_CHAT);
+    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_MEMEX_CHAT);
     const view = (_a = leaves[0]) == null ? void 0 : _a.view;
     this.search.onProgress = (done, total) => {
       if (view && done % 200 === 0) {
