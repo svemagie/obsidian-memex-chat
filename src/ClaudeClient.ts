@@ -18,7 +18,7 @@ export interface ClaudeStreamChunk {
   error?: string;
 }
 
-/** Minimal Claude API client */
+/** Minimal Claude API client using Obsidian's requestUrl (bypasses CORS) */
 export class ClaudeClient {
   private baseUrl = "https://api.anthropic.com/v1/messages";
 
@@ -30,74 +30,39 @@ export class ClaudeClient {
     };
   }
 
-  /** Stream a chat completion, yielding text chunks */
+  /**
+   * "Stream" a chat completion via requestUrl (no real streaming — CORS blocks
+   * native fetch from app://obsidian.md). Yields the full response as a single
+   * text chunk so ChatView's streaming loop keeps working unchanged.
+   */
   async *streamChat(
     messages: ClaudeMessage[],
     options: ClaudeOptions
   ): AsyncGenerator<ClaudeStreamChunk> {
-    // Use native fetch for streaming (requestUrl doesn't support streaming).
-    // The outdated anthropic-beta header is omitted — streaming is stable API.
-    const response = await fetch(this.baseUrl, {
+    const response = await requestUrl({
+      url: this.baseUrl,
       method: "POST",
       headers: this.headers(options.apiKey),
       body: JSON.stringify({
         model: options.model,
         max_tokens: options.maxTokens ?? 2048,
-        stream: true,
         system: options.systemPrompt,
         messages,
       }),
+      throw: false,
     });
 
-    if (!response.ok) {
-      const err = await response.text();
-      yield { type: "error", error: `API Error ${response.status}: ${err}` };
+    if (response.status >= 400) {
+      yield { type: "error", error: `API Error ${response.status}: ${response.text}` };
       return;
     }
 
-    const reader = response.body?.getReader();
-    if (!reader) {
-      yield { type: "error", error: "No response body" };
-      return;
-    }
-
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-
-      for (const line of lines) {
-        if (!line.startsWith("data: ")) continue;
-        const data = line.slice(6).trim();
-        if (data === "[DONE]") {
-          yield { type: "done" };
-          return;
-        }
-        try {
-          const json = JSON.parse(data);
-          if (json.type === "content_block_delta" && json.delta?.type === "text_delta") {
-            yield { type: "text", text: json.delta.text };
-          } else if (json.type === "message_stop") {
-            yield { type: "done" };
-            return;
-          } else if (json.type === "error") {
-            yield { type: "error", error: json.error?.message ?? "Unknown error" };
-            return;
-          }
-        } catch {
-          // skip malformed lines
-        }
-      }
-    }
+    const text: string = response.json.content?.[0]?.text ?? "";
+    yield { type: "text", text };
     yield { type: "done" };
   }
 
-  /** Non-streaming version — uses Obsidian's requestUrl to bypass CORS */
+  /** Non-streaming convenience wrapper */
   async chat(messages: ClaudeMessage[], options: ClaudeOptions): Promise<string> {
     const response = await requestUrl({
       url: this.baseUrl,

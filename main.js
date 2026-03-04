@@ -657,65 +657,34 @@ var ClaudeClient = class {
       "anthropic-version": "2023-06-01"
     };
   }
-  /** Stream a chat completion, yielding text chunks */
+  /**
+   * "Stream" a chat completion via requestUrl (no real streaming — CORS blocks
+   * native fetch from app://obsidian.md). Yields the full response as a single
+   * text chunk so ChatView's streaming loop keeps working unchanged.
+   */
   async *streamChat(messages, options) {
-    var _a, _b, _c, _d, _e, _f;
-    const response = await fetch(this.baseUrl, {
+    var _a, _b, _c, _d;
+    const response = await (0, import_obsidian2.requestUrl)({
+      url: this.baseUrl,
       method: "POST",
       headers: this.headers(options.apiKey),
       body: JSON.stringify({
         model: options.model,
         max_tokens: (_a = options.maxTokens) != null ? _a : 2048,
-        stream: true,
         system: options.systemPrompt,
         messages
-      })
+      }),
+      throw: false
     });
-    if (!response.ok) {
-      const err = await response.text();
-      yield { type: "error", error: `API Error ${response.status}: ${err}` };
+    if (response.status >= 400) {
+      yield { type: "error", error: `API Error ${response.status}: ${response.text}` };
       return;
     }
-    const reader = (_b = response.body) == null ? void 0 : _b.getReader();
-    if (!reader) {
-      yield { type: "error", error: "No response body" };
-      return;
-    }
-    const decoder = new TextDecoder();
-    let buffer = "";
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done)
-        break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = (_c = lines.pop()) != null ? _c : "";
-      for (const line of lines) {
-        if (!line.startsWith("data: "))
-          continue;
-        const data = line.slice(6).trim();
-        if (data === "[DONE]") {
-          yield { type: "done" };
-          return;
-        }
-        try {
-          const json = JSON.parse(data);
-          if (json.type === "content_block_delta" && ((_d = json.delta) == null ? void 0 : _d.type) === "text_delta") {
-            yield { type: "text", text: json.delta.text };
-          } else if (json.type === "message_stop") {
-            yield { type: "done" };
-            return;
-          } else if (json.type === "error") {
-            yield { type: "error", error: (_f = (_e = json.error) == null ? void 0 : _e.message) != null ? _f : "Unknown error" };
-            return;
-          }
-        } catch (e) {
-        }
-      }
-    }
+    const text = (_d = (_c = (_b = response.json.content) == null ? void 0 : _b[0]) == null ? void 0 : _c.text) != null ? _d : "";
+    yield { type: "text", text };
     yield { type: "done" };
   }
-  /** Non-streaming version — uses Obsidian's requestUrl to bypass CORS */
+  /** Non-streaming convenience wrapper */
   async chat(messages, options) {
     var _a, _b, _c, _d;
     const response = await (0, import_obsidian2.requestUrl)({
