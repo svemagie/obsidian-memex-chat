@@ -5,6 +5,5 @@
   "minAppVersion": "1.4.0",
   "description": "Chat with your Obsidian vault using Claude AI — semantic context retrieval, @ mentions, thread history.",
   "author": "Sven",
-  "authorUrl": "",
   "isDesktopOnly": false
 }

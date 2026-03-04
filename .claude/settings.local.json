@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh repo create memex-chat --public --source=. --remote=origin --push)",
+      "Bash(/opt/homebrew/bin/gh repo create memex-chat --public --source=. --remote=origin --push)",
+      "Bash(npm run build)",
+      "Bash(npm install)",
+      "WebFetch(domain:docs.obsidian.md)"
+    ]
+  }
+}

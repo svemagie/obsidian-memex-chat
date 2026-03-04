@@ -131,7 +131,7 @@ var ChatView = class extends import_obsidian.ItemView {
     this.sendBtn = inputActions.createEl("button", { cls: "vc-send-btn" });
     this.sendBtn.setText("Senden");
     this.sendBtn.onclick = () => this.handleSend();
-    this.inputEl.addEventListener("keydown", (e) => {
+    this.registerDomEvent(this.inputEl, "keydown", (e) => {
       if (this.mentionDropdownEl.style.display !== "none") {
         if (e.key === "ArrowDown") {
           e.preventDefault();
@@ -164,7 +164,7 @@ var ChatView = class extends import_obsidian.ItemView {
         }
       }
     });
-    this.inputEl.addEventListener("input", () => this.handleInputChange());
+    this.registerDomEvent(this.inputEl, "input", () => this.handleInputChange());
     this.renderThreadList();
   }
   // ─── Thread Management ────────────────────────────────────────────────────
@@ -570,6 +570,14 @@ ${content}`;
   setStatus(text) {
     this.statusEl.setText(text);
     this.statusEl.style.display = text ? "block" : "none";
+  }
+  /** Pre-fill the input textarea (used from plugin commands) */
+  setInputValue(value) {
+    this.inputEl.value = value;
+  }
+  /** Add files as explicit context (used from plugin commands) */
+  setExplicitContext(files) {
+    this.explicitContext = files;
   }
   handleInputChange() {
     var _a;
@@ -1199,8 +1207,7 @@ Wenn du Fragen beantwortest:
 var MODELS = [
   { id: "claude-opus-4-5-20251101", name: "Claude Opus 4.5 (St\xE4rkst)" },
   { id: "claude-sonnet-4-5-20250929", name: "Claude Sonnet 4.5 (Empfohlen)" },
-  { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4.5 (Schnell)" },
-  { id: "claude-opus-4-5-20251101", name: "Claude Opus 4.5" }
+  { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4.5 (Schnell)" }
 ];
 var MemexChatSettingsTab = class extends import_obsidian3.PluginSettingTab {
   constructor(app, plugin) {
@@ -1509,8 +1516,8 @@ var MemexChatPlugin = class extends import_obsidian4.Plugin {
             const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_MEMEX_CHAT)[0];
             if (leaf) {
               const view = leaf.view;
-              view.inputEl.value = `Erkl\xE4re und verkn\xFCpfe [[${file.basename}]] mit anderen Konzepten im Vault.`;
-              view.explicitContext = [file];
+              view.setInputValue(`Erkl\xE4re und verkn\xFCpfe [[${file.basename}]] mit anderen Konzepten im Vault.`);
+              view.setExplicitContext([file]);
             }
           });
         }
@@ -1554,9 +1561,7 @@ var MemexChatPlugin = class extends import_obsidian4.Plugin {
     this.search.onProgress = void 0;
     if (view) {
       view.setStatus(`\u2713 ${this.app.vault.getMarkdownFiles().length} Notizen indiziert`);
-      setTimeout(() => {
-        view.setStatus("");
-      }, 3e3);
+      setTimeout(() => view.setStatus(""), 3e3);
     }
   }
   async saveSettings() {

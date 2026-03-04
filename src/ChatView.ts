@@ -172,8 +172,8 @@ export class ChatView extends ItemView {
     this.sendBtn.setText("Senden");
     this.sendBtn.onclick = () => this.handleSend();
 
-    // Key bindings
-    this.inputEl.addEventListener("keydown", (e) => {
+    // Key bindings — use registerDomEvent for automatic cleanup on view close
+    this.registerDomEvent(this.inputEl, "keydown", (e: KeyboardEvent) => {
       if (this.mentionDropdownEl.style.display !== "none") {
         if (e.key === "ArrowDown") {
           e.preventDefault();
@@ -207,7 +207,7 @@ export class ChatView extends ItemView {
       }
     });
 
-    this.inputEl.addEventListener("input", () => this.handleInputChange());
+    this.registerDomEvent(this.inputEl, "input", () => this.handleInputChange());
 
     this.renderThreadList();
   }
@@ -668,9 +668,19 @@ export class ChatView extends ItemView {
     this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
   }
 
-  private setStatus(text: string): void {
+  setStatus(text: string): void {
     this.statusEl.setText(text);
     this.statusEl.style.display = text ? "block" : "none";
+  }
+
+  /** Pre-fill the input textarea (used from plugin commands) */
+  setInputValue(value: string): void {
+    this.inputEl.value = value;
+  }
+
+  /** Add files as explicit context (used from plugin commands) */
+  setExplicitContext(files: TFile[]): void {
+    this.explicitContext = files;
   }
 
   private handleInputChange(): void {

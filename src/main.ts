@@ -68,10 +68,8 @@ export default class MemexChatPlugin extends Plugin {
             const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_MEMEX_CHAT)[0];
             if (leaf) {
               const view = leaf.view as ChatView;
-              // @ts-ignore
-              view.inputEl.value = `Erkläre und verknüpfe [[${file.basename}]] mit anderen Konzepten im Vault.`;
-              // @ts-ignore
-              view.explicitContext = [file];
+              view.setInputValue(`Erkläre und verknüpfe [[${file.basename}]] mit anderen Konzepten im Vault.`);
+              view.setExplicitContext([file]);
             }
           });
         }
@@ -116,7 +114,6 @@ export default class MemexChatPlugin extends Plugin {
     this.search.priorityProperties = this.settings.contextProperties;
     this.search.onProgress = (done, total) => {
       if (view && done % 200 === 0) {
-        // @ts-ignore
         view.setStatus(`Indiziere… ${done}/${total}`);
       }
     };
@@ -124,12 +121,8 @@ export default class MemexChatPlugin extends Plugin {
     await this.search.buildIndex();
     this.search.onProgress = undefined;
     if (view) {
-      // @ts-ignore
       view.setStatus(`✓ ${this.app.vault.getMarkdownFiles().length} Notizen indiziert`);
-      setTimeout(() => {
-        // @ts-ignore
-        view.setStatus("");
-      }, 3000);
+      setTimeout(() => view.setStatus(""), 3000);
     }
   }
 
