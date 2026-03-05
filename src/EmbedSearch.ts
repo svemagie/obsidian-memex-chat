@@ -27,6 +27,7 @@ export class EmbedSearch {
   private app: App;
   private modelId: string;
   excludeFolders: string[] = []; // vault folder prefixes to skip
+  contextProperties: string[] = []; // frontmatter keys whose links get a score boost
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private pipe: ((text: string, opts: object) => Promise<{ data: Float32Array }>) | null = null;
   private cache: Map<string, EmbedCacheEntry> = new Map(); // vaultPath → entry
@@ -278,16 +279,53 @@ export class EmbedSearch {
         qvec = await this.embedWithTimeout(text);
       } catch { return []; }
     }
+
+    // Collect paths explicitly linked via contextProperty frontmatter fields
+    const linkedPaths = new Set<string>();
+    if (this.contextProperties.length > 0) {
+      const meta = this.app.metadataCache.getFileCache(file);
+      const links = meta?.frontmatterLinks ?? [];
+      for (const link of links) {
+        if (this.contextProperties.includes(link.key.split(".")[0])) {
+          const resolved = this.app.metadataCache.getFirstLinkpathDest(link.link, file.path);
+          if (resolved) linkedPaths.add(resolved.path);
+        }
+      }
+    }
+
+    // Collect tags of the current file
+    const fileMeta = this.app.metadataCache.getFileCache(file);
+    const fileTags = new Set<string>(
+      (fileMeta?.tags ?? []).map((t) => t.tag.toLowerCase())
+    );
+
     const scores: Array<[string, number]> = [];
     for (const [path, { vec }] of this.vecs) {
       if (path === file.path) continue;
-      const s = this.cosine(qvec, vec);
-      if (s > 0.2) scores.push([path, s]);
+      let s = this.cosine(qvec, vec);
+      if (s < 0.15) continue; // broader pre-filter to allow boosted notes through
+
+      if (linkedPaths.has(path)) {
+        s = Math.min(1.0, s + 0.15);
+      }
+
+      if (fileTags.size > 0) {
+        const otherMeta = this.app.metadataCache.getFileCache(this.vecs.get(path)!.file);
+        const otherTags = (otherMeta?.tags ?? []).map((t) => t.tag.toLowerCase());
+        let sharedTags = 0;
+        for (const tag of otherTags) {
+          if (fileTags.has(tag)) sharedTags++;
+          if (sharedTags >= 3) break;
+        }
+        if (sharedTags > 0) s = Math.min(1.0, s + sharedTags * 0.05);
+      }
+
+      scores.push([path, s]);
     }
     scores.sort((a, b) => b[1] - a[1]);
     return scores.slice(0, topK).map(([path, score]) => {
       const { file: f } = this.vecs.get(path)!;
-      return { file: f, score, excerpt: "", title: f.basename };
+      return { file: f, score, excerpt: "", title: f.basename, linked: linkedPaths.has(path) };
     });
   }
 

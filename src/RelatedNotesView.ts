@@ -68,7 +68,9 @@ export class RelatedNotesView extends ItemView {
       const item = list.createDiv("vc-related-item");
 
       const info = item.createDiv("vc-related-info");
-      info.createDiv({ cls: "vc-related-name", text: r.title });
+      const nameRow = info.createDiv("vc-related-name-row");
+      nameRow.createSpan({ cls: "vc-related-name", text: r.title });
+      if (r.linked) nameRow.createSpan({ cls: "vc-related-linked", text: "verknüpft" });
 
       // Folder path (dimmed)
       const folder = r.file.parent?.path;

@@ -146,6 +146,7 @@ export default class MemexChatPlugin extends Plugin {
     }
     this.embedSearch = new EmbedSearch(this.app, this.settings.embeddingModel);
     this.embedSearch.excludeFolders = this.settings.embedExcludeFolders ?? [];
+    this.embedSearch.contextProperties = this.settings.contextProperties ?? [];
 
     // Re-embed modified notes as they change
     this.registerEvent(

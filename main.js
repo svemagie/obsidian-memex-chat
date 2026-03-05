@@ -32293,6 +32293,8 @@ var EmbedSearch = class {
   constructor(app, modelId) {
     this.excludeFolders = [];
     // vault folder prefixes to skip
+    this.contextProperties = [];
+    // frontmatter keys whose links get a score boost
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     this.pipe = null;
     this.cache = /* @__PURE__ */ new Map();
@@ -32508,18 +32510,51 @@ var EmbedSearch = class {
         return [];
       }
     }
+    const linkedPaths = /* @__PURE__ */ new Set();
+    if (this.contextProperties.length > 0) {
+      const meta = this.app.metadataCache.getFileCache(file);
+      const links = meta?.frontmatterLinks ?? [];
+      for (const link of links) {
+        if (this.contextProperties.includes(link.key.split(".")[0])) {
+          const resolved = this.app.metadataCache.getFirstLinkpathDest(link.link, file.path);
+          if (resolved)
+            linkedPaths.add(resolved.path);
+        }
+      }
+    }
+    const fileMeta = this.app.metadataCache.getFileCache(file);
+    const fileTags = new Set(
+      (fileMeta?.tags ?? []).map((t) => t.tag.toLowerCase())
+    );
     const scores = [];
     for (const [path3, { vec }] of this.vecs) {
       if (path3 === file.path)
         continue;
-      const s = this.cosine(qvec, vec);
-      if (s > 0.2)
-        scores.push([path3, s]);
+      let s = this.cosine(qvec, vec);
+      if (s < 0.15)
+        continue;
+      if (linkedPaths.has(path3)) {
+        s = Math.min(1, s + 0.15);
+      }
+      if (fileTags.size > 0) {
+        const otherMeta = this.app.metadataCache.getFileCache(this.vecs.get(path3).file);
+        const otherTags = (otherMeta?.tags ?? []).map((t) => t.tag.toLowerCase());
+        let sharedTags = 0;
+        for (const tag of otherTags) {
+          if (fileTags.has(tag))
+            sharedTags++;
+          if (sharedTags >= 3)
+            break;
+        }
+        if (sharedTags > 0)
+          s = Math.min(1, s + sharedTags * 0.05);
+      }
+      scores.push([path3, s]);
     }
     scores.sort((a, b) => b[1] - a[1]);
     return scores.slice(0, topK).map(([path3, score]) => {
       const { file: f } = this.vecs.get(path3);
-      return { file: f, score, excerpt: "", title: f.basename };
+      return { file: f, score, excerpt: "", title: f.basename, linked: linkedPaths.has(path3) };
     });
   }
   async search(query, topK = 8) {
@@ -33199,7 +33234,10 @@ var RelatedNotesView = class extends import_obsidian4.ItemView {
     for (const r of results) {
       const item = list.createDiv("vc-related-item");
       const info = item.createDiv("vc-related-info");
-      info.createDiv({ cls: "vc-related-name", text: r.title });
+      const nameRow = info.createDiv("vc-related-name-row");
+      nameRow.createSpan({ cls: "vc-related-name", text: r.title });
+      if (r.linked)
+        nameRow.createSpan({ cls: "vc-related-linked", text: "verkn\xFCpft" });
       const folder = r.file.parent?.path;
       if (folder && folder !== "/") {
         info.createDiv({ cls: "vc-related-folder", text: folder });
@@ -33334,6 +33372,7 @@ var MemexChatPlugin = class extends import_obsidian5.Plugin {
     }
     this.embedSearch = new EmbedSearch(this.app, this.settings.embeddingModel);
     this.embedSearch.excludeFolders = this.settings.embedExcludeFolders ?? [];
+    this.embedSearch.contextProperties = this.settings.contextProperties ?? [];
     this.registerEvent(
       this.app.vault.on("modify", (file) => {
         if (this.embedSearch && file instanceof import_obsidian5.TFile && file.extension === "md")

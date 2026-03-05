@@ -5,6 +5,8 @@ export interface SearchResult {
   score: number;
   excerpt: string;
   title: string;
+  /** True when the note is explicitly linked via a contextProperty frontmatter field */
+  linked?: boolean;
 }
 
 /** Minimal TF-IDF search engine over the Obsidian vault */
