@@ -16,11 +16,11 @@ interface Manifest { model: string; version: number }
 /**
  * Semantic search engine using Transformers.js for local embeddings.
  *
- * Cache layout (one .ajson file per note, incremental writes):
- *   <vault>/.memex-chat/embeddings/.manifest.json   — model name + version
- *   <vault>/.memex-chat/embeddings/some/note.ajson  — { mtime, vec }
+ * All data lives under <vault>/.memex-chat/:
+ *   models/                            — downloaded ONNX model files (via env.cacheDir)
+ *   embeddings/.manifest.json          — model name + version
+ *   embeddings/some/note.ajson         — { mtime, vec }
  *
- * Models are downloaded from HuggingFace on first use and cached by the browser.
  * WASM runtime is loaded from CDN (cdn.jsdelivr.net) on first use.
  */
 export class EmbedSearch {
@@ -51,8 +51,16 @@ export class EmbedSearch {
     return (this.app.vault.adapter as any).basePath as string;
   }
 
+  private get baseDir(): string {
+    return join(this.vaultRoot, ".memex-chat");
+  }
+
+  private get modelsDir(): string {
+    return join(this.baseDir, "models");
+  }
+
   private get embedDir(): string {
-    return join(this.vaultRoot, ".memex-chat", "embeddings");
+    return join(this.baseDir, "embeddings");
   }
 
   private get manifestPath(): string {
@@ -69,16 +77,19 @@ export class EmbedSearch {
   private async loadPipeline(): Promise<void> {
     if (this.pipe) return;
 
-    // Dynamic import — bundled by esbuild, WASM loaded from CDN at runtime
+    // Use require() — reliable in CJS bundle; still lazy since we're inside an async function.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const mod = await import("@xenova/transformers") as any;
-    const { pipeline, env } = mod;
+    const { pipeline, env } = require("@xenova/transformers") as any;
 
     env.backends.onnx.wasm.wasmPaths =
       "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.14.0/dist/";
-    env.backends.onnx.wasm.proxy = false;
+    env.backends.onnx.wasm.proxy = false; // proxy Worker hangs in Obsidian; run inline instead
+    env.backends.onnx.wasm.numThreads = 1;
     env.allowLocalModels = false;
-    env.useBrowserCache = true;
+    env.allowRemoteModels = true;
+    env.useBrowserCache = false;
+    env.useFSCache = true;
+    env.cacheDir = this.modelsDir; // store downloaded models in vault's .memex-chat/models/
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const progress_callback = (p: any) => {
@@ -121,6 +132,15 @@ export class EmbedSearch {
     this.vecs.clear();
 
     const changed: string[] = []; // vault paths newly embedded this run
+    let pipelineError: unknown = null;
+
+    // Create directories unconditionally — independent of pipeline success
+    try {
+      await fsp.mkdir(this.modelsDir, { recursive: true });
+      await fsp.mkdir(this.embedDir, { recursive: true });
+    } catch (e) {
+      console.error("[Memex] Verzeichnisse konnten nicht angelegt werden:", e);
+    }
 
     try {
       await this.loadCache();
@@ -140,6 +160,9 @@ export class EmbedSearch {
           this.vecs.set(file.path, { vec: cached.vec, file });
         } else {
           try {
+            // Yield before each inference so Obsidian's event loop can process events
+            // (WASM inference is synchronous and blocks the main thread briefly per note)
+            await new Promise((r) => setTimeout(r, 0));
             const raw = await this.app.vault.cachedRead(file);
             const text = this.preprocess(raw).slice(0, 800) + " " + file.basename;
             const vec = await this.embed(text);
@@ -147,8 +170,14 @@ export class EmbedSearch {
             this.vecs.set(file.path, { vec, file });
             changed.push(file.path);
             windowEmbedded++;
-          } catch {
-            // skip unembeddable files
+          } catch (e) {
+            if (!this.pipe && !pipelineError) {
+              // Pipeline failed to load — log once and abort embedding loop
+              pipelineError = e;
+              console.error("[Memex] Pipeline-Ladefehler:", e);
+              break;
+            }
+            // skip individual file
           }
         }
 
@@ -162,6 +191,8 @@ export class EmbedSearch {
           this.onProgress(done, total, speed);
         }
       }
+
+      if (pipelineError) throw pipelineError;
 
       const allPaths = new Set(files.map((f) => f.path));
       await this.saveCache(changed, allPaths);
