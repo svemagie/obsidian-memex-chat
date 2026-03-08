@@ -114,11 +114,8 @@ export class EmbedSearch {
   }
 
   private async embed(text: string): Promise<number[]> {
-    console.log("[Memex] embed: loadPipeline…");
     await this.loadPipeline();
-    console.log("[Memex] embed: pipe call…");
     const result = await this.pipe!(text.slice(0, 512), { pooling: "mean", normalize: true });
-    console.log("[Memex] embed: done, dims:", result.data.length);
     return Array.from(result.data);
   }
 
@@ -141,7 +138,6 @@ export class EmbedSearch {
   // ─── Index ────────────────────────────────────────────────────────────────
 
   async buildIndex(): Promise<void> {
-    console.log("[Memex] buildIndex START, indexing:", this.indexing);
     if (this.indexing) return;
     this.indexing = true;
     this.indexed = false;
@@ -154,21 +150,18 @@ export class EmbedSearch {
     try {
       await fsp.mkdir(this.modelsDir, { recursive: true });
       await fsp.mkdir(this.embedDir, { recursive: true });
-      console.log("[Memex] Verzeichnisse OK:", this.embedDir);
     } catch (e) {
       console.error("[Memex] Verzeichnisse konnten nicht angelegt werden:", e);
     }
 
     try {
       await this.loadCache();
-      console.log("[Memex] Cache geladen, Einträge:", this.cache.size);
 
       const allFiles = this.app.vault.getMarkdownFiles();
       const files = this.excludeFolders.length
         ? allFiles.filter((f) => !this.excludeFolders.some((ex) => f.path.startsWith(ex + "/")))
         : allFiles;
       const total = files.length;
-      console.log("[Memex] Dateien gesamt:", total, "(ausgeschlossen:", allFiles.length - total, ")");
       let done = 0;
       let windowStart = Date.now();
       let windowEmbedded = 0;
@@ -193,8 +186,6 @@ export class EmbedSearch {
             this.vecs.set(file.path, { vec, file });
             changed.push(file.path);
             windowEmbedded++;
-            if (changed.length === 1 || changed.length % 50 === 0)
-              console.log(`[Memex] Eingebettet: ${changed.length}/${total}`);
             // Flush newly embedded notes to disk every 100 to preserve progress
             if (changed.length % 100 === 0) await this.flushBatch(changed.slice(-100));
           } catch (e) {
@@ -220,7 +211,6 @@ export class EmbedSearch {
         }
       }
 
-      console.log("[Memex] Loop fertig, changed:", changed.length, "pipelineError:", !!pipelineError);
       if (pipelineError) throw pipelineError;
 
       const allPaths = new Set(files.map((f) => f.path));
@@ -233,7 +223,6 @@ export class EmbedSearch {
       console.error("[Memex] buildIndex Fehler:", e);
     } finally {
       this.indexing = false;
-      console.log("[Memex] buildIndex END, indexed:", this.indexed);
     }
   }
 
@@ -259,7 +248,6 @@ export class EmbedSearch {
         this.cache.set(file.path, { mtime, vec });
         this.vecs.set(file.path, { vec, file });
         await this.saveCache([file.path], new Set(this.vecs.keys()));
-        console.log("[Memex] Re-embedded:", file.path);
       } catch (e) {
         console.warn("[Memex] Re-embed fehlgeschlagen:", file.path, e);
       }

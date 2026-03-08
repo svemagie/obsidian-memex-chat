@@ -106,8 +106,6 @@ export default class MemexChatPlugin extends Plugin {
         this.initEmbedSearch().catch(console.error);
       }
     });
-
-    console.log("[Memex Chat] Plugin geladen");
   }
 
   onunload(): void {

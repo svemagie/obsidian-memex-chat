@@ -2,6 +2,16 @@
   "name": "memex-chat",
   "version": "1.0.2",
   "description": "Obsidian plugin: Chat with your vault using Claude AI",
+  "author": "Sven",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/svemagie/memex-chat.git"
+  },
+  "bugs": {
+    "url": "https://github.com/svemagie/memex-chat/issues"
+  },
+  "homepage": "https://github.com/svemagie/memex-chat#readme",
   "main": "main.js",
   "scripts": {
     "build": "node esbuild.config.mjs production",

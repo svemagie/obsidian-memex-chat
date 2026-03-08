@@ -32362,11 +32362,8 @@ var EmbedSearch = class {
     });
   }
   async embed(text) {
-    console.log("[Memex] embed: loadPipeline\u2026");
     await this.loadPipeline();
-    console.log("[Memex] embed: pipe call\u2026");
     const result = await this.pipe(text.slice(0, 512), { pooling: "mean", normalize: true });
-    console.log("[Memex] embed: done, dims:", result.data.length);
     return Array.from(result.data);
   }
   /** embed() with a hard timeout; rejects with "embed timeout" if exceeded. */
@@ -32386,7 +32383,6 @@ var EmbedSearch = class {
   }
   // ─── Index ────────────────────────────────────────────────────────────────
   async buildIndex() {
-    console.log("[Memex] buildIndex START, indexing:", this.indexing);
     if (this.indexing)
       return;
     this.indexing = true;
@@ -32397,17 +32393,14 @@ var EmbedSearch = class {
     try {
       await import_fs3.promises.mkdir(this.modelsDir, { recursive: true });
       await import_fs3.promises.mkdir(this.embedDir, { recursive: true });
-      console.log("[Memex] Verzeichnisse OK:", this.embedDir);
     } catch (e) {
       console.error("[Memex] Verzeichnisse konnten nicht angelegt werden:", e);
     }
     try {
       await this.loadCache();
-      console.log("[Memex] Cache geladen, Eintr\xE4ge:", this.cache.size);
       const allFiles = this.app.vault.getMarkdownFiles();
       const files = this.excludeFolders.length ? allFiles.filter((f) => !this.excludeFolders.some((ex) => f.path.startsWith(ex + "/"))) : allFiles;
       const total = files.length;
-      console.log("[Memex] Dateien gesamt:", total, "(ausgeschlossen:", allFiles.length - total, ")");
       let done = 0;
       let windowStart = Date.now();
       let windowEmbedded = 0;
@@ -32427,8 +32420,6 @@ var EmbedSearch = class {
             this.vecs.set(file.path, { vec, file });
             changed.push(file.path);
             windowEmbedded++;
-            if (changed.length === 1 || changed.length % 50 === 0)
-              console.log(`[Memex] Eingebettet: ${changed.length}/${total}`);
             if (changed.length % 100 === 0)
               await this.flushBatch(changed.slice(-100));
           } catch (e) {
@@ -32453,7 +32444,6 @@ var EmbedSearch = class {
           this.onProgress(done, total, speed);
         }
       }
-      console.log("[Memex] Loop fertig, changed:", changed.length, "pipelineError:", !!pipelineError);
       if (pipelineError)
         throw pipelineError;
       const allPaths = new Set(files.map((f) => f.path));
@@ -32466,7 +32456,6 @@ var EmbedSearch = class {
       console.error("[Memex] buildIndex Fehler:", e);
     } finally {
       this.indexing = false;
-      console.log("[Memex] buildIndex END, indexed:", this.indexed);
     }
   }
   /**
@@ -32489,7 +32478,6 @@ var EmbedSearch = class {
         this.cache.set(file.path, { mtime, vec });
         this.vecs.set(file.path, { vec, file });
         await this.saveCache([file.path], new Set(this.vecs.keys()));
-        console.log("[Memex] Re-embedded:", file.path);
       } catch (e) {
         console.warn("[Memex] Re-embed fehlgeschlagen:", file.path, e);
       }
@@ -33334,7 +33322,6 @@ var MemexChatPlugin = class extends import_obsidian5.Plugin {
         this.initEmbedSearch().catch(console.error);
       }
     });
-    console.log("[Memex Chat] Plugin geladen");
   }
   onunload() {
     this.app.workspace.detachLeavesOfType(VIEW_TYPE_MEMEX_CHAT);
