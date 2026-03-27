@@ -84,7 +84,10 @@ export class ClaudeClient {
     return response.json.content?.[0]?.text ?? "";
   }
 
-  /** Fetch the 3 newest Claude models from the Anthropic Models API. */
+  /**
+   * Fetch Claude models from the Anthropic Models API.
+   * Returns the 2 newest versions of each family (opus, sonnet, haiku), in that order.
+   */
   async fetchModels(apiKey: string): Promise<{ id: string; name: string }[]> {
     const response = await requestUrl({
       url: "https://api.anthropic.com/v1/models",
@@ -102,9 +105,13 @@ export class ClaudeClient {
       throw new Error("No models returned");
     }
 
-    return data
-      .sort((a, b) => b.created - a.created)
-      .slice(0, 3)
-      .map((m) => ({ id: m.id, name: m.id }));
+    const sorted = data.sort((a, b) => b.created - a.created);
+    const families = ["opus", "sonnet", "haiku"] as const;
+    return families.flatMap((family) =>
+      sorted
+        .filter((m) => m.id.includes(family))
+        .slice(0, 2)
+        .map((m) => ({ id: m.id, name: m.id }))
+    );
   }
 }
