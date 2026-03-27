@@ -97,6 +97,14 @@ export default class MemexChatPlugin extends Plugin {
     // Settings tab
     this.addSettingTab(new MemexChatSettingsTab(this.app, this));
 
+    // Re-embed modified notes as they change (registered once; guard handles embedSearch being null)
+    this.registerEvent(
+      this.app.vault.on("modify", (file) => {
+        if (this.embedSearch && file instanceof TFile && file.extension === "md")
+          this.embedSearch.reembedFile(file);
+      })
+    );
+
     // Build index once the workspace layout (and vault cache) is fully ready
     this.app.workspace.onLayoutReady(() => {
       if (!this.search.isIndexed()) {
@@ -147,19 +155,13 @@ export default class MemexChatPlugin extends Plugin {
     this.embedSearch.excludeFolders = this.settings.embedExcludeFolders ?? [];
     this.embedSearch.contextProperties = this.settings.contextProperties ?? [];
 
-    // Re-embed modified notes as they change
-    this.registerEvent(
-      this.app.vault.on("modify", (file) => {
-        if (this.embedSearch && file instanceof TFile && file.extension === "md")
-          this.embedSearch.reembedFile(file);
-      })
-    );
+    const modelShort = this.settings.embeddingModel.split("/").pop() ?? this.settings.embeddingModel;
 
     // Persistent notice updated during background indexing
-    const notice = new Notice("Memex: Embedding wird vorbereitet…", 0);
+    const notice = new Notice(`Memex [${modelShort}]: Embedding wird vorbereitet…`, 0);
 
     this.embedSearch.onModelStatus = (status) => {
-      notice.setMessage(`Memex: ${status}`);
+      notice.setMessage(`Memex [${modelShort}]: ${status}`);
     };
 
     this.embedSearch.onProgress = (done, total, speed) => {
@@ -168,13 +170,13 @@ export default class MemexChatPlugin extends Plugin {
       const eta = remaining > 0
         ? ` • ~${remaining < 60 ? Math.ceil(remaining) + "s" : Math.ceil(remaining / 60) + "min"}`
         : "";
-      notice.setMessage(`Memex Embedding: ${done}/${total}${speedStr}${eta}`);
+      notice.setMessage(`Memex [${modelShort}]: ${done}/${total}${speedStr}${eta}`);
     };
 
     // Wait for Obsidian Sync to finish before starting (avoids embedding stale/partial files)
     this.waitForSyncIdle(notice).then(() => this.embedSearch?.buildIndex())
       .then(() => {
-        notice.setMessage(`✓ Memex: ${this.app.vault.getMarkdownFiles().length} Notizen eingebettet`);
+        notice.setMessage(`✓ Memex [${modelShort}]: ${this.app.vault.getMarkdownFiles().length} Notizen eingebettet`);
         setTimeout(() => notice.hide(), 4000);
         this.notifyRelatedView();
       })
