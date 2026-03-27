@@ -1,4 +1,4 @@
-import { App, PluginSettingTab, Setting } from "obsidian";
+import { App, ButtonComponent, DropdownComponent, Notice, PluginSettingTab, Setting } from "obsidian";
 import type MemexChatPlugin from "./main";
 import { EMBEDDING_MODELS } from "./EmbedSearch";
 
@@ -32,7 +32,7 @@ export interface MemexChatSettings {
 
 export const DEFAULT_SETTINGS: MemexChatSettings = {
   apiKey: "",
-  model: "claude-opus-4-5-20251101",
+  model: "claude-opus-4-6",
   maxTokens: 8192,
   maxContextNotes: 6,
   maxCharsPerNote: 2500,
@@ -70,8 +70,8 @@ Wenn du Fragen beantwortest:
 };
 
 export const MODELS = [
-  { id: "claude-opus-4-5-20251101", name: "Claude Opus 4.5 (Stärkste)" },
-  { id: "claude-sonnet-4-5-20250929", name: "Claude Sonnet 4.5 (Empfohlen)" },
+  { id: "claude-opus-4-6", name: "Claude Opus 4.6 (Stärkste)" },
+  { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6 (Empfohlen)" },
   { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4.5 (Schnell)" },
 ];
 
@@ -148,14 +148,39 @@ export class MemexChatSettingsTab extends PluginSettingTab {
           })
       );
 
+    let modelDrop: DropdownComponent;
+    let refreshBtn: ButtonComponent;
+
     new Setting(containerEl)
       .setName("Modell")
       .setDesc("Welches Claude-Modell verwenden?")
       .addDropdown((drop) => {
+        modelDrop = drop;
         for (const m of MODELS) drop.addOption(m.id, m.name);
         drop.setValue(this.plugin.settings.model).onChange(async (value) => {
           this.plugin.settings.model = value;
           await this.plugin.saveSettings();
+        });
+      })
+      .addButton((btn) => {
+        refreshBtn = btn;
+        btn.setButtonText("Aktualisieren").onClick(async () => {
+          const prev = modelDrop.getValue();
+          refreshBtn.setDisabled(true);
+          refreshBtn.setButtonText("...");
+          try {
+            const models = await this.plugin.claude.fetchModels(this.plugin.settings.apiKey);
+            modelDrop.selectEl.empty();
+            for (const m of models) modelDrop.addOption(m.id, m.name);
+            modelDrop.setValue(prev);
+            this.plugin.settings.model = modelDrop.getValue();
+            await this.plugin.saveSettings();
+          } catch (err) {
+            new Notice("Modelle konnten nicht geladen werden: " + (err as Error).message);
+          } finally {
+            refreshBtn.setDisabled(false);
+            refreshBtn.setButtonText("Aktualisieren");
+          }
         });
       });
 
