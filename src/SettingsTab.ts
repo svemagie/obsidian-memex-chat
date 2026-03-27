@@ -153,7 +153,7 @@ export class MemexChatSettingsTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Modell")
-      .setDesc("Welches Claude-Modell verwenden?")
+      .setDesc("Welches Claude-Modell verwenden? (Aktualisieren zeigt Roh-IDs)")
       .addDropdown((drop) => {
         modelDrop = drop;
         for (const m of MODELS) drop.addOption(m.id, m.name);
