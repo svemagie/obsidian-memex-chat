@@ -15324,8 +15324,8 @@ var init_hub = __esm({
        * @param {string} request 
        * @returns {Promise<FileResponse | undefined>}
        */
-      async match(request) {
-        let filePath = import_path2.default.join(this.path, request);
+      async match(request2) {
+        let filePath = import_path2.default.join(this.path, request2);
         let file = new FileResponse(filePath);
         if (file.exists) {
           return file;
@@ -15339,9 +15339,9 @@ var init_hub = __esm({
        * @param {Response|FileResponse} response 
        * @returns {Promise<void>}
        */
-      async put(request, response) {
+      async put(request2, response) {
         const buffer = Buffer.from(await response.arrayBuffer());
-        let outputPath = import_path2.default.join(this.path, request);
+        let outputPath = import_path2.default.join(this.path, request2);
         try {
           await import_fs2.default.promises.mkdir(import_path2.default.dirname(outputPath), { recursive: true });
           await import_fs2.default.promises.writeFile(outputPath, buffer);
@@ -32717,6 +32717,7 @@ var HybridSearch = class {
 
 // src/ClaudeClient.ts
 var import_obsidian2 = require("obsidian");
+var https = __toESM(require("https"));
 var ClaudeClient = class {
   constructor() {
     this.baseUrl = "https://api.anthropic.com/v1/messages";
@@ -32729,9 +32730,9 @@ var ClaudeClient = class {
     };
   }
   /**
-   * Stream a chat completion via XHR + SSE, yielding text chunks as they arrive.
-   * Uses XHR instead of fetch because Obsidian patches the global fetch in a way
-   * that buffers the full response, breaking streaming.
+   * Stream a chat completion via Node.js https + SSE, yielding text chunks as they arrive.
+   * Uses the Node.js https module (available in Obsidian's Electron renderer via Node integration)
+   * to bypass Electron's CORS/CSP restrictions that block fetch and XHR to external APIs.
    */
   async *streamChat(messages, options) {
     const queue = [];
@@ -32747,56 +32748,68 @@ var ClaudeClient = class {
       wakeup?.();
       wakeup = null;
     };
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", this.baseUrl, true);
-    for (const [k, v] of Object.entries(this.headers(options.apiKey))) {
-      xhr.setRequestHeader(k, v);
-    }
-    let linesCursor = 0;
-    const parseSse = (allDone) => {
-      const lines = xhr.responseText.split("\n");
-      const limit = allDone ? lines.length : lines.length - 1;
-      for (let i = linesCursor; i < limit; i++) {
-        const line = lines[i];
-        if (!line.startsWith("data: "))
-          continue;
-        const data = line.slice(6).trim();
-        if (data === "[DONE]")
-          return;
-        try {
-          const ev = JSON.parse(data);
-          if (ev.type === "content_block_delta" && ev.delta?.type === "text_delta") {
-            push({ type: "text", text: ev.delta.text });
-          }
-        } catch {
-        }
-      }
-      linesCursor = limit;
-    };
-    xhr.onprogress = () => parseSse(false);
-    xhr.onload = () => {
-      if (xhr.status >= 400) {
-        push({ type: "error", error: `API Error ${xhr.status}: ${xhr.responseText}` });
-      } else {
-        parseSse(true);
-      }
-      finish();
-    };
-    xhr.onerror = () => {
-      push({ type: "error", error: "Network error" });
-      finish();
-    };
-    xhr.ontimeout = () => {
-      push({ type: "error", error: "Request timed out" });
-      finish();
-    };
-    xhr.send(JSON.stringify({
+    const body = JSON.stringify({
       model: options.model,
       max_tokens: options.maxTokens ?? 8192,
       system: options.systemPrompt,
       messages,
       stream: true
-    }));
+    });
+    const req = https.request(
+      {
+        hostname: "api.anthropic.com",
+        path: "/v1/messages",
+        method: "POST",
+        headers: {
+          ...this.headers(options.apiKey),
+          "content-length": Buffer.byteLength(body).toString()
+        }
+      },
+      (res) => {
+        if ((res.statusCode ?? 0) >= 400) {
+          let errBody = "";
+          res.on("data", (d) => errBody += d.toString());
+          res.on("end", () => {
+            push({ type: "error", error: `API Error ${res.statusCode}: ${errBody}` });
+            finish();
+          });
+          return;
+        }
+        let buf = "";
+        res.on("data", (chunk) => {
+          buf += chunk.toString();
+          const lines = buf.split("\n");
+          buf = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.startsWith("data: "))
+              continue;
+            const data = line.slice(6).trim();
+            if (data === "[DONE]")
+              return;
+            try {
+              const ev = JSON.parse(data);
+              if (ev.type === "content_block_delta" && ev.delta?.type === "text_delta") {
+                push({ type: "text", text: ev.delta.text });
+              }
+            } catch {
+            }
+          }
+        });
+        res.on("end", () => {
+          finish();
+        });
+        res.on("error", (e) => {
+          push({ type: "error", error: e.message });
+          finish();
+        });
+      }
+    );
+    req.on("error", (e) => {
+      push({ type: "error", error: e.message });
+      finish();
+    });
+    req.write(body);
+    req.end();
     while (true) {
       while (queue.length)
         yield queue.shift();
