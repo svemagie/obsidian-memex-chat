@@ -357,7 +357,14 @@ export class ChatView extends ItemView {
 
     const contextNotes = contextFiles.map((f) => f.path);
 
-    // Build context text
+    // MemPalace context (queried first — prepended so it appears closest to the query)
+    let mpContext = "";
+    if (this.plugin.settings.useMempalace && query.trim()) {
+      this.setStatus("MemPalace wird abgefragt…");
+      mpContext = await this.queryMempalace(query);
+    }
+
+    // Build vault context text
     let contextText = "";
     if (contextFiles.length > 0) {
       this.setStatus(`Lade ${contextFiles.length} Notizen…`);
@@ -369,6 +376,9 @@ export class ChatView extends ItemView {
       );
       contextText = "\n\n---\nKontext aus dem Vault:\n\n" + contents.join("\n\n");
     }
+
+    // MemPalace results precede vault notes (higher priority = closer to the query)
+    if (mpContext) contextText = mpContext + contextText;
 
     // Add user message
     const userMsg: ChatMessage = {
@@ -1085,6 +1095,26 @@ export class ChatView extends ItemView {
       }
       this.renderHistoryList(listEl);
     }
+  }
+
+  /** Query the MemPalace CLI and return formatted context, or "" on error/timeout/not-installed. */
+  private async queryMempalace(query: string): Promise<string> {
+    return new Promise((resolve) => {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { execFile } = require("child_process") as typeof import("child_process");
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { existsSync } = require("fs") as typeof import("fs");
+      if (!existsSync("/usr/local/bin/mempalace")) { resolve(""); return; }
+      execFile(
+        "/usr/local/bin/mempalace",
+        ["search", query, "--results", String(this.plugin.settings.mempalaceResults ?? 3)],
+        { timeout: 10_000 },
+        (err: Error | null, stdout: string) => {
+          if (err || !stdout?.trim()) { resolve(""); return; }
+          resolve("\n\n---\nMemPalace (Wissens-Archiv):\n\n" + stdout.trim());
+        }
+      );
+    });
   }
 
   private renderHistoryList(listEl: HTMLElement): void {

@@ -28,6 +28,8 @@ export interface MemexChatSettings {
   useEmbeddings: boolean;         // use local embedding model instead of TF-IDF
   embeddingModel: string;         // HuggingFace model ID
   embedExcludeFolders: string[];  // vault folders to skip during embedding
+  useMempalace: boolean;          // inject MemPalace search results as additional context
+  mempalaceResults: number;       // number of MemPalace results to include
 }
 
 export const DEFAULT_SETTINGS: MemexChatSettings = {
@@ -54,6 +56,8 @@ Wenn du Fragen beantwortest:
   useEmbeddings: false,
   embeddingModel: "TaylorAI/bge-micro-v2",
   embedExcludeFolders: [],
+  useMempalace: false,
+  mempalaceResults: 3,
   promptButtons: [
     {
       label: "Draft Check",
@@ -283,6 +287,37 @@ export class MemexChatSettingsTab extends PluginSettingTab {
     exclInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") { e.preventDefault(); addExclFolder(exclInput.value); }
     });
+
+    // --- MemPalace ---
+    containerEl.createEl("h3", { text: "MemPalace" });
+    containerEl.createEl("p", {
+      text: "Reichert jeden Chat mit Ergebnissen aus dem MemPalace-Wissensarchiv an (benötigt /usr/local/bin/mempalace).",
+      cls: "setting-item-description",
+    });
+
+    new Setting(containerEl)
+      .setName("MemPalace aktivieren")
+      .setDesc("Führt bei jeder Nachricht eine MemPalace-Suche durch und fügt die Ergebnisse als Kontext ein.")
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.useMempalace).onChange(async (value) => {
+          this.plugin.settings.useMempalace = value;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Anzahl MemPalace-Ergebnisse")
+      .setDesc("Wie viele Treffer aus dem MemPalace-Archiv pro Anfrage eingebunden werden (1–10).")
+      .addSlider((slider) =>
+        slider
+          .setLimits(1, 10, 1)
+          .setValue(this.plugin.settings.mempalaceResults)
+          .setDynamicTooltip()
+          .onChange(async (value) => {
+            this.plugin.settings.mempalaceResults = value;
+            await this.plugin.saveSettings();
+          })
+      );
 
     // --- Context ---
     containerEl.createEl("h3", { text: "Kontext-Einstellungen" });

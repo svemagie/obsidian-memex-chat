@@ -31405,6 +31405,11 @@ var ChatView = class extends import_obsidian.ItemView {
       ...additionalFiles
     ].filter((f, i, arr) => arr.findIndex((x) => x.path === f.path) === i);
     const contextNotes = contextFiles.map((f) => f.path);
+    let mpContext = "";
+    if (this.plugin.settings.useMempalace && query.trim()) {
+      this.setStatus("MemPalace wird abgefragt\u2026");
+      mpContext = await this.queryMempalace(query);
+    }
     let contextText = "";
     if (contextFiles.length > 0) {
       this.setStatus(`Lade ${contextFiles.length} Notizen\u2026`);
@@ -31417,6 +31422,8 @@ ${content}`;
       );
       contextText = "\n\n---\nKontext aus dem Vault:\n\n" + contents.join("\n\n");
     }
+    if (mpContext)
+      contextText = mpContext + contextText;
     const userMsg = {
       role: "user",
       content: query,
@@ -32044,6 +32051,29 @@ tags: [chat]
       }
       this.renderHistoryList(listEl);
     }
+  }
+  /** Query the MemPalace CLI and return formatted context, or "" on error/timeout/not-installed. */
+  async queryMempalace(query) {
+    return new Promise((resolve) => {
+      const { execFile } = require("child_process");
+      const { existsSync } = require("fs");
+      if (!existsSync("/usr/local/bin/mempalace")) {
+        resolve("");
+        return;
+      }
+      execFile(
+        "/usr/local/bin/mempalace",
+        ["search", query, "--results", String(this.plugin.settings.mempalaceResults ?? 3)],
+        { timeout: 1e4 },
+        (err, stdout) => {
+          if (err || !stdout?.trim()) {
+            resolve("");
+            return;
+          }
+          resolve("\n\n---\nMemPalace (Wissens-Archiv):\n\n" + stdout.trim());
+        }
+      );
+    });
   }
   renderHistoryList(listEl) {
     listEl.empty();
@@ -32894,6 +32924,8 @@ Wenn du Fragen beantwortest:
   useEmbeddings: false,
   embeddingModel: "TaylorAI/bge-micro-v2",
   embedExcludeFolders: [],
+  useMempalace: false,
+  mempalaceResults: 3,
   promptButtons: [
     {
       label: "Draft Check",
@@ -33077,6 +33109,23 @@ var MemexChatSettingsTab = class extends import_obsidian3.PluginSettingTab {
         addExclFolder(exclInput.value);
       }
     });
+    containerEl.createEl("h3", { text: "MemPalace" });
+    containerEl.createEl("p", {
+      text: "Reichert jeden Chat mit Ergebnissen aus dem MemPalace-Wissensarchiv an (ben\xF6tigt /usr/local/bin/mempalace).",
+      cls: "setting-item-description"
+    });
+    new import_obsidian3.Setting(containerEl).setName("MemPalace aktivieren").setDesc("F\xFChrt bei jeder Nachricht eine MemPalace-Suche durch und f\xFCgt die Ergebnisse als Kontext ein.").addToggle(
+      (toggle) => toggle.setValue(this.plugin.settings.useMempalace).onChange(async (value) => {
+        this.plugin.settings.useMempalace = value;
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian3.Setting(containerEl).setName("Anzahl MemPalace-Ergebnisse").setDesc("Wie viele Treffer aus dem MemPalace-Archiv pro Anfrage eingebunden werden (1\u201310).").addSlider(
+      (slider) => slider.setLimits(1, 10, 1).setValue(this.plugin.settings.mempalaceResults).setDynamicTooltip().onChange(async (value) => {
+        this.plugin.settings.mempalaceResults = value;
+        await this.plugin.saveSettings();
+      })
+    );
     containerEl.createEl("h3", { text: "Kontext-Einstellungen" });
     new import_obsidian3.Setting(containerEl).setName("Max. Kontext-Notizen").setDesc("Wie viele Notizen werden automatisch als Kontext hinzugef\xFCgt? (1\u201315)").addSlider(
       (slider) => slider.setLimits(1, 15, 1).setValue(this.plugin.settings.maxContextNotes).setDynamicTooltip().onChange(async (value) => {
