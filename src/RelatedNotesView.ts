@@ -54,18 +54,48 @@ export class RelatedNotesView extends ItemView {
     this.renderStatus("Suche verwandte Notizen…");
 
     const topK = this.plugin.settings.mempalaceResults ?? 5;
+    const modelShort = this.plugin.settings.embeddingModel?.split("/").pop() ?? "Embeddings";
+
+    // Build a richer query from note content (title + stripped body excerpt)
+    const mpQuery = await this.buildMpQuery(file);
 
     const [mpResults, nativeResults] = await Promise.all([
-      useMempalace ? this.queryMempalace(file.basename, topK) : Promise.resolve([] as MpResult[]),
-      embedReady   ? es!.searchSimilarToFile(file)            : Promise.resolve([]),
+      useMempalace ? this.queryMempalace(mpQuery, topK, file.basename) : Promise.resolve([] as MpResult[]),
+      embedReady   ? es!.searchSimilarToFile(file)      : Promise.resolve([]),
     ]);
 
-    this.render(mpResults, nativeResults, file.basename);
+    this.render(mpResults, nativeResults, file.basename, embedReady ? modelShort : null);
   }
 
   // ─── MemPalace ────────────────────────────────────────────────────────────
 
-  private async queryMempalace(query: string, topK: number): Promise<MpResult[]> {
+  /** Build a semantic query from the note: title + stripped body (first ~300 chars). */
+  private async buildMpQuery(file: TFile): Promise<string> {
+    try {
+      const raw = await this.app.vault.cachedRead(file);
+      // Strip frontmatter
+      let body = raw;
+      if (body.startsWith("---")) {
+        const end = body.indexOf("\n---", 3);
+        if (end > 0) body = body.slice(end + 4);
+      }
+      // Strip wikilinks, markdown syntax
+      body = body
+        .replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_, t, a) => a || t)
+        .replace(/!\[.*?\]\(.*?\)/g, "")
+        .replace(/\[([^\]]+)\]\(.*?\)/g, "$1")
+        .replace(/^#{1,6}\s+/gm, "")
+        .replace(/[>*_`]/g, "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 300);
+      return `${file.basename} ${body}`.slice(0, 500).trim();
+    } catch {
+      return file.basename;
+    }
+  }
+
+  private async queryMempalace(query: string, topK: number, excludeBasename?: string): Promise<MpResult[]> {
     return new Promise((resolve) => {
       try {
         const { existsSync } = require("fs") as typeof import("fs");
@@ -73,11 +103,14 @@ export class RelatedNotesView extends ItemView {
         if (!existsSync("/usr/local/bin/mempalace")) { resolve([]); return; }
         execFile(
           "/usr/local/bin/mempalace",
-          ["search", query, "--results", String(topK)],
+          ["search", query, "--results", String(topK + 2)], // fetch extra to absorb self-matches
           { timeout: 8000 },
           (err: Error | null, stdout: string) => {
             if (err || !stdout) { resolve([]); return; }
-            resolve(this.parseMempalace(stdout));
+            const results = this.parseMempalace(stdout)
+              .filter((r) => r.source !== excludeBasename)
+              .slice(0, topK);
+            resolve(results);
           }
         );
       } catch { resolve([]); }
@@ -90,12 +123,13 @@ export class RelatedNotesView extends ItemView {
     for (const block of blocks) {
       const locMatch   = block.match(/\[\d+\]\s+(.+?)\n/);
       const srcMatch   = block.match(/Source:\s+(.+?)(?:\.md)?\s*\n/);
-      const scoreMatch = block.match(/Match:\s+([\d.]+)/);
+      const scoreMatch = block.match(/Match:\s+(-?[\d.]+)/);
       if (!locMatch || !srcMatch || !scoreMatch) continue;
 
       const location = locMatch[1].trim();
       const source   = srcMatch[1].trim();
       const score    = parseFloat(scoreMatch[1]);
+      if (score <= 0) continue; // skip irrelevant results
 
       const afterScore = block.slice(block.indexOf(scoreMatch[0]) + scoreMatch[0].length).trimStart();
       const excerpt = afterScore.replace(/\n{3,}/g, "\n\n").trim().slice(0, 240);
@@ -115,7 +149,8 @@ export class RelatedNotesView extends ItemView {
   private render(
     mpResults: MpResult[],
     nativeResults: Array<{ file: TFile; score: number; title: string; linked?: boolean }>,
-    forNote?: string
+    forNote?: string,
+    vaultEngine?: string | null   // model short name, or null if not active
   ) {
     this.contentEl.empty();
 
@@ -130,7 +165,7 @@ export class RelatedNotesView extends ItemView {
 
     // ── MemPalace section ──
     if (mpResults.length) {
-      this.contentEl.createDiv({ cls: "vc-related-section-label", text: "MemPalace" });
+      this.contentEl.createDiv({ cls: "vc-related-section-label", text: "MemPalace · semantisch" });
       const mpList = this.contentEl.createDiv("vc-related-list");
       for (const r of mpResults) {
         const item = mpList.createDiv("vc-related-item vc-related-item--mp");
@@ -159,7 +194,8 @@ export class RelatedNotesView extends ItemView {
 
     // ── Vault (native) section ──
     if (nativeResults.length) {
-      this.contentEl.createDiv({ cls: "vc-related-section-label", text: "Vault" });
+      const vaultLabel = vaultEngine ? `Vault · ${vaultEngine}` : "Vault";
+      this.contentEl.createDiv({ cls: "vc-related-section-label", text: vaultLabel });
       const list = this.contentEl.createDiv("vc-related-list");
       for (const r of nativeResults) {
         const item = list.createDiv("vc-related-item");

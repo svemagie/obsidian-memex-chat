@@ -33421,14 +33421,32 @@ var RelatedNotesView = class extends import_obsidian4.ItemView {
     }
     this.renderStatus("Suche verwandte Notizen\u2026");
     const topK = this.plugin.settings.mempalaceResults ?? 5;
+    const modelShort = this.plugin.settings.embeddingModel?.split("/").pop() ?? "Embeddings";
+    const mpQuery = await this.buildMpQuery(file);
     const [mpResults, nativeResults] = await Promise.all([
-      useMempalace ? this.queryMempalace(file.basename, topK) : Promise.resolve([]),
+      useMempalace ? this.queryMempalace(mpQuery, topK, file.basename) : Promise.resolve([]),
       embedReady ? es.searchSimilarToFile(file) : Promise.resolve([])
     ]);
-    this.render(mpResults, nativeResults, file.basename);
+    this.render(mpResults, nativeResults, file.basename, embedReady ? modelShort : null);
   }
   // ─── MemPalace ────────────────────────────────────────────────────────────
-  async queryMempalace(query, topK) {
+  /** Build a semantic query from the note: title + stripped body (first ~300 chars). */
+  async buildMpQuery(file) {
+    try {
+      const raw = await this.app.vault.cachedRead(file);
+      let body = raw;
+      if (body.startsWith("---")) {
+        const end = body.indexOf("\n---", 3);
+        if (end > 0)
+          body = body.slice(end + 4);
+      }
+      body = body.replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_, t, a) => a || t).replace(/!\[.*?\]\(.*?\)/g, "").replace(/\[([^\]]+)\]\(.*?\)/g, "$1").replace(/^#{1,6}\s+/gm, "").replace(/[>*_`]/g, "").replace(/\s+/g, " ").trim().slice(0, 300);
+      return `${file.basename} ${body}`.slice(0, 500).trim();
+    } catch {
+      return file.basename;
+    }
+  }
+  async queryMempalace(query, topK, excludeBasename) {
     return new Promise((resolve) => {
       try {
         const { existsSync } = require("fs");
@@ -33439,14 +33457,16 @@ var RelatedNotesView = class extends import_obsidian4.ItemView {
         }
         execFile(
           "/usr/local/bin/mempalace",
-          ["search", query, "--results", String(topK)],
+          ["search", query, "--results", String(topK + 2)],
+          // fetch extra to absorb self-matches
           { timeout: 8e3 },
           (err, stdout) => {
             if (err || !stdout) {
               resolve([]);
               return;
             }
-            resolve(this.parseMempalace(stdout));
+            const results = this.parseMempalace(stdout).filter((r) => r.source !== excludeBasename).slice(0, topK);
+            resolve(results);
           }
         );
       } catch {
@@ -33460,12 +33480,14 @@ var RelatedNotesView = class extends import_obsidian4.ItemView {
     for (const block of blocks) {
       const locMatch = block.match(/\[\d+\]\s+(.+?)\n/);
       const srcMatch = block.match(/Source:\s+(.+?)(?:\.md)?\s*\n/);
-      const scoreMatch = block.match(/Match:\s+([\d.]+)/);
+      const scoreMatch = block.match(/Match:\s+(-?[\d.]+)/);
       if (!locMatch || !srcMatch || !scoreMatch)
         continue;
       const location = locMatch[1].trim();
       const source = srcMatch[1].trim();
       const score = parseFloat(scoreMatch[1]);
+      if (score <= 0)
+        continue;
       const afterScore = block.slice(block.indexOf(scoreMatch[0]) + scoreMatch[0].length).trimStart();
       const excerpt = afterScore.replace(/\n{3,}/g, "\n\n").trim().slice(0, 240);
       results.push({ source, location, score, excerpt });
@@ -33477,7 +33499,7 @@ var RelatedNotesView = class extends import_obsidian4.ItemView {
     this.contentEl.empty();
     this.contentEl.createDiv({ cls: "vc-related-status", text: msg });
   }
-  render(mpResults, nativeResults, forNote) {
+  render(mpResults, nativeResults, forNote, vaultEngine) {
     this.contentEl.empty();
     const header = this.contentEl.createDiv("vc-related-header");
     header.createDiv({ cls: "vc-related-title", text: "Verwandte Notizen" });
@@ -33488,7 +33510,7 @@ var RelatedNotesView = class extends import_obsidian4.ItemView {
       return;
     }
     if (mpResults.length) {
-      this.contentEl.createDiv({ cls: "vc-related-section-label", text: "MemPalace" });
+      this.contentEl.createDiv({ cls: "vc-related-section-label", text: "MemPalace \xB7 semantisch" });
       const mpList = this.contentEl.createDiv("vc-related-list");
       for (const r of mpResults) {
         const item = mpList.createDiv("vc-related-item vc-related-item--mp");
@@ -33512,7 +33534,8 @@ var RelatedNotesView = class extends import_obsidian4.ItemView {
       }
     }
     if (nativeResults.length) {
-      this.contentEl.createDiv({ cls: "vc-related-section-label", text: "Vault" });
+      const vaultLabel = vaultEngine ? `Vault \xB7 ${vaultEngine}` : "Vault";
+      this.contentEl.createDiv({ cls: "vc-related-section-label", text: vaultLabel });
       const list = this.contentEl.createDiv("vc-related-list");
       for (const r of nativeResults) {
         const item = list.createDiv("vc-related-item");
